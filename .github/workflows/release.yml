@@ -1,0 +1,65 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app || sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Build release binary
+        run: swift build -c release
+
+      - name: Package app bundle
+        run: |
+          BIN_PATH=$(swift build -c release --show-bin-path)
+          APP_BUNDLE="MeetingPilot.app"
+          CONTENTS_DIR="$APP_BUNDLE/Contents"
+          MACOS_DIR="$CONTENTS_DIR/MacOS"
+
+          mkdir -p "$MACOS_DIR"
+          cp "$BIN_PATH/MeetingPilot" "$MACOS_DIR/MeetingPilot"
+          cp "Sources/MeetingPilot/Info.plist" "$CONTENTS_DIR/Info.plist"
+
+          # Ad-hoc sign with entitlements (user will re-sign locally if needed)
+          codesign --force --sign - --entitlements MeetingPilot.entitlements --deep "$APP_BUNDLE"
+
+          # Create zip for distribution
+          ditto -c -k --keepParent "$APP_BUNDLE" MeetingPilot.zip
+
+          echo "APP_ZIP=MeetingPilot.zip" >> $GITHUB_ENV
+          echo "Built and packaged MeetingPilot.app"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MeetingPilot.zip
+          generate_release_notes: true
+          body: |
+            ## MeetingPilot ${{ github.ref_name }}
+
+            ### Installation
+
+            1. Download `MeetingPilot.zip`
+            2. Unzip to get `MeetingPilot.app`
+            3. Move to `/Applications/` (or run from anywhere)
+            4. Right-click → Open (first time only, to bypass Gatekeeper)
+            5. Grant permissions when prompted: Microphone, Speech Recognition, Screen Recording
+
+            ### Requirements
+            - macOS 14.0 (Sonoma) or later
+            - Apple Silicon or Intel Mac
+
+            ### Note
+            The app is ad-hoc signed. On first launch, macOS may show a security warning.
+            Right-click the app and select "Open" to allow it, or run:
+            ```bash
+            xattr -cr /Applications/MeetingPilot.app
+            ```
