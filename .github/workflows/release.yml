@@ -36,14 +36,44 @@ jobs:
           cp "$BIN_PATH/MeetingPilot" "$MACOS_DIR/MeetingPilot"
           cp "Sources/MeetingPilot/Info.plist" "$CONTENTS_DIR/Info.plist"
 
-          # Ad-hoc sign with entitlements (user will re-sign locally if needed)
           codesign --force --sign - --entitlements MeetingPilot.entitlements --deep "$APP_BUNDLE"
 
-          # Create zip for distribution
-          ditto -c -k --keepParent "$APP_BUNDLE" MeetingPilot.zip
+      - name: Create install script and zip
+        run: |
+          cat > install.sh << 'SCRIPT'
+          #!/bin/bash
+          set -e
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+          APP_SRC="$SCRIPT_DIR/MeetingPilot.app"
+          APP_DST="/Applications/MeetingPilot.app"
 
-          echo "APP_ZIP=MeetingPilot.zip" >> $GITHUB_ENV
-          echo "Built and packaged MeetingPilot.app"
+          if [ ! -d "$APP_SRC" ]; then
+            echo "Error: MeetingPilot.app not found next to this script."
+            exit 1
+          fi
+
+          echo "Installing MeetingPilot to /Applications ..."
+          [ -d "$APP_DST" ] && rm -rf "$APP_DST"
+          cp -R "$APP_SRC" "$APP_DST"
+
+          xattr -cr "$APP_DST"
+          codesign --force --deep --sign - "$APP_DST" 2>/dev/null || true
+
+          echo ""
+          echo "Done! MeetingPilot installed to /Applications."
+          echo ""
+          echo "First launch:"
+          echo "  1. Open MeetingPilot from /Applications"
+          echo "  2. If macOS blocks it: System Settings → Privacy & Security → click 'Open Anyway'"
+          echo "  3. Grant permissions when prompted: Microphone, Screen Recording"
+          echo ""
+          SCRIPT
+          chmod +x install.sh
+
+          mkdir -p dist
+          cp -R MeetingPilot.app dist/
+          cp install.sh dist/
+          cd dist && zip -r ../MeetingPilot.zip . && cd ..
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -53,21 +83,35 @@ jobs:
           body: |
             ## MeetingPilot ${{ github.ref_name }}
 
-            ### Installation
+            ### Quick Install (recommended)
 
-            1. Download `MeetingPilot.zip`
-            2. Unzip to get `MeetingPilot.app`
-            3. Move to `/Applications/` (or run from anywhere)
-            4. Right-click → Open (first time only, to bypass Gatekeeper)
-            5. Grant permissions when prompted: Microphone, Speech Recognition, Screen Recording
+            ```bash
+            # Download and unzip, then:
+            cd MeetingPilot   # or wherever you unzipped
+            bash install.sh
+            ```
+
+            The install script will:
+            - Copy `MeetingPilot.app` to `/Applications/`
+            - Remove quarantine attributes (prevents repeated auth prompts)
+            - Re-sign the app locally
+
+            ### Manual Install
+
+            1. Unzip `MeetingPilot.zip`
+            2. Run in Terminal:
+               ```bash
+               cp -R MeetingPilot.app /Applications/
+               xattr -cr /Applications/MeetingPilot.app
+               ```
+            3. Open from `/Applications/` — if blocked, go to **System Settings → Privacy & Security → Open Anyway**
+
+            ### Permissions Needed
+            On first launch, grant access to:
+            - **Microphone** (captures your voice)
+            - **Screen Recording** (captures system/remote audio via ScreenCaptureKit)
+            - **Speech Recognition** (on-device transcription)
 
             ### Requirements
             - macOS 14.0 (Sonoma) or later
             - Apple Silicon or Intel Mac
-
-            ### Note
-            The app is ad-hoc signed. On first launch, macOS may show a security warning.
-            Right-click the app and select "Open" to allow it, or run:
-            ```bash
-            xattr -cr /Applications/MeetingPilot.app
-            ```
