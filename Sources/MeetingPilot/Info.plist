@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>MeetingPilot</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>MeetingPilot</string>
+    <key>CFBundleDisplayName</key>
+    <string>Meeting Pilot</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.hwang.meetingpilot</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Meeting Pilot needs microphone access to capture your voice during meetings.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Meeting Pilot needs speech recognition to generate real-time meeting transcripts.</string>
+</dict>
+</plist>
