@@ -15,19 +15,31 @@ macOS native meeting transcription app with dual-channel audio capture and speak
 
 - macOS 14.0 (Sonoma) or later
 - Apple Silicon or Intel Mac
+- Xcode Command Line Tools (`xcode-select --install`)
 - Permissions: Microphone, Speech Recognition, Screen Recording
 
-## Build & Run
+## Install
 
 ```bash
-# Build
-make build
-
-# Build and run (debug)
-make run
-
-# Build release and install to /Applications
+git clone git@github.com:hwang-cadent/MeetingPilot.git
+cd MeetingPilot
 make install
+```
+
+`make install` will automatically:
+1. Create a local self-signed code signing certificate (first time only)
+2. Build a release binary
+3. Package and sign as `MeetingPilot.app`
+4. Install to `/Applications/`
+
+On first launch, grant Microphone and Screen Recording permissions when prompted.
+
+## Development
+
+```bash
+make build    # Build debug binary
+make run      # Build, package, sign, and launch (debug)
+make clean    # Remove build artifacts
 ```
 
 ## Architecture

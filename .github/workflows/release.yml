@@ -38,42 +38,9 @@ jobs:
 
           codesign --force --sign - --entitlements MeetingPilot.entitlements --deep "$APP_BUNDLE"
 
-      - name: Create install script and zip
+      - name: Create zip for CI artifact
         run: |
-          cat > install.sh << 'SCRIPT'
-          #!/bin/bash
-          set -e
-          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-          APP_SRC="$SCRIPT_DIR/MeetingPilot.app"
-          APP_DST="/Applications/MeetingPilot.app"
-
-          if [ ! -d "$APP_SRC" ]; then
-            echo "Error: MeetingPilot.app not found next to this script."
-            exit 1
-          fi
-
-          echo "Installing MeetingPilot to /Applications ..."
-          [ -d "$APP_DST" ] && rm -rf "$APP_DST"
-          cp -R "$APP_SRC" "$APP_DST"
-
-          xattr -cr "$APP_DST"
-          codesign --force --deep --sign - "$APP_DST" 2>/dev/null || true
-
-          echo ""
-          echo "Done! MeetingPilot installed to /Applications."
-          echo ""
-          echo "First launch:"
-          echo "  1. Open MeetingPilot from /Applications"
-          echo "  2. If macOS blocks it: System Settings → Privacy & Security → click 'Open Anyway'"
-          echo "  3. Grant permissions when prompted: Microphone, Screen Recording"
-          echo ""
-          SCRIPT
-          chmod +x install.sh
-
-          mkdir -p dist
-          cp -R MeetingPilot.app dist/
-          cp install.sh dist/
-          cd dist && zip -r ../MeetingPilot.zip . && cd ..
+          ditto -c -k --keepParent MeetingPilot.app MeetingPilot.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -83,35 +50,38 @@ jobs:
           body: |
             ## MeetingPilot ${{ github.ref_name }}
 
-            ### Quick Install (recommended)
+            ### Install from Source (recommended)
+
+            Building from source creates a properly signed app that macOS will trust
+            without repeated permission prompts.
 
             ```bash
-            # Download and unzip, then:
-            cd MeetingPilot   # or wherever you unzipped
-            bash install.sh
+            git clone git@github.com:hwang-cadent/MeetingPilot.git
+            cd MeetingPilot
+            make install
             ```
 
-            The install script will:
-            - Copy `MeetingPilot.app` to `/Applications/`
-            - Remove quarantine attributes (prevents repeated auth prompts)
-            - Re-sign the app locally
+            This will automatically create a local signing certificate, build, sign,
+            and install to `/Applications/`.
 
-            ### Manual Install
+            ### Pre-built Binary (advanced)
 
-            1. Unzip `MeetingPilot.zip`
-            2. Run in Terminal:
-               ```bash
-               cp -R MeetingPilot.app /Applications/
-               xattr -cr /Applications/MeetingPilot.app
-               ```
-            3. Open from `/Applications/` — if blocked, go to **System Settings → Privacy & Security → Open Anyway**
+            The attached `MeetingPilot.zip` is ad-hoc signed and intended for
+            CI verification. If you use the pre-built binary, you must remove the
+            quarantine attribute after download:
 
-            ### Permissions Needed
-            On first launch, grant access to:
-            - **Microphone** (captures your voice)
-            - **Screen Recording** (captures system/remote audio via ScreenCaptureKit)
-            - **Speech Recognition** (on-device transcription)
+            ```bash
+            unzip MeetingPilot.zip
+            xattr -cr MeetingPilot.app
+            mv MeetingPilot.app /Applications/
+            ```
+
+            > **Note**: Ad-hoc signed binaries may trigger repeated macOS permission
+            > prompts. Building from source is strongly recommended.
 
             ### Requirements
             - macOS 14.0 (Sonoma) or later
-            - Apple Silicon or Intel Mac
+            - Xcode Command Line Tools (`xcode-select --install`)
+
+            ### Permissions Needed
+            On first launch, grant: **Microphone**, **Screen Recording**, **Speech Recognition**
