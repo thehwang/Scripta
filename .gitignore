@@ -1,0 +1,17 @@
+# Swift build artifacts
+.build/
+*.xcodeproj
+xcuserdata/
+DerivedData/
+.swiftpm/
+
+# macOS
+.DS_Store
+*.dSYM
+
+# Test data (generated)
+Tests/test_data/
+
+# IDE
+.vscode/
+.idea/
