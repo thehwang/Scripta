@@ -126,6 +126,94 @@ public enum SpeakerDiarizer {
             numClusters: numClusters)
     }
 
+    // MARK: - Neural Embedding API
+
+    private static let neuralMinSegmentSec: Double = 3.0
+    private static let neuralMaxSpeakers = 8
+
+    /// Diarize using neural speaker embeddings from a CoreML model.
+    public static func diarize(
+        entries: [TranscriptEntry],
+        audioBuffer: [Float],
+        sampleRate: Double,
+        recordingStart: Date,
+        embedder: SpeakerEmbedder
+    ) -> [DiarizedEntry] {
+        mplog("diarizer(neural): start — \(entries.count) entries, \(audioBuffer.count) samples (\(String(format:"%.1f", Double(audioBuffer.count)/sampleRate))s)")
+
+        let melFB = buildMelFilterbank(sampleRate: sampleRate)
+        let dctMat = buildDCTMatrix()
+        var segments = detectSpeechSegments(audioBuffer: audioBuffer, sampleRate: sampleRate)
+        mplog("diarizer(neural): VAD → \(segments.count) speech segments")
+
+        segments = splitAtChangePoints(
+            segments: segments, audioBuffer: audioBuffer,
+            sampleRate: sampleRate, melFB: melFB, dctMat: dctMat)
+        mplog("diarizer(neural): after change-point split → \(segments.count) segments")
+
+        // Filter short segments — neural embeddings need ≥3s for reliability
+        let minSamples = Int(neuralMinSegmentSec * sampleRate)
+        segments = segments.filter { $0.end - $0.start >= minSamples }
+        mplog("diarizer(neural): after ≥\(neuralMinSegmentSec)s filter → \(segments.count) segments")
+
+        guard !segments.isEmpty else {
+            mplog("diarizer(neural): no speech segments found")
+            return entries.enumerated().map { DiarizedEntry(originalIndex: $0, speaker: $1.speaker) }
+        }
+
+        // Extract neural embeddings per segment
+        var sfs: [SegmentResult] = []
+        for (i, seg) in segments.enumerated() {
+            let audio = Array(audioBuffer[seg.start..<seg.end])
+            var rms: Float = 0
+            vDSP_rmsqv(audio, 1, &rms, vDSP_Length(audio.count))
+            guard rms > silenceRMS else { continue }
+
+            do {
+                let embedding = try embedder.embed(audioSamples: audio)
+                guard !embedding.isEmpty else { continue }
+                sfs.append(SegmentResult(idx: i, start: seg.start, end: seg.end, feat: embedding))
+            } catch {
+                mplog("diarizer(neural): embedding failed for seg \(i): \(error.localizedDescription)")
+            }
+        }
+        mplog("diarizer(neural): embeddings extracted for \(sfs.count)/\(segments.count) segments")
+
+        guard sfs.count >= 2 else {
+            mplog("diarizer(neural): too few segments for clustering")
+            return entries.enumerated().map { DiarizedEntry(originalIndex: $0, speaker: $1.speaker) }
+        }
+
+        let samplePairs = min(sfs.count, 6)
+        for i in 0..<samplePairs {
+            for j in (i+1)..<samplePairs {
+                let sim = cosineSimilarity(sfs[i].feat, sfs[j].feat)
+                mplog("diarizer(neural): sim(seg\(sfs[i].idx),seg\(sfs[j].idx))=\(String(format:"%.4f", sim))")
+            }
+        }
+
+        let effectiveThresh = neuralAdaptiveThreshold(features: sfs.map(\.feat))
+        var labels = agglomerativeCluster(features: sfs.map(\.feat), threshold: effectiveThresh)
+        var numClusters = (labels.max() ?? 0) + 1
+        mplog("diarizer(neural): initial clustering → \(numClusters) speaker(s), threshold=\(String(format:"%.4f",effectiveThresh))")
+
+        // Post-clustering: merge tiny clusters into nearest large cluster
+        labels = mergeSmallClusters(labels: labels, features: sfs.map(\.feat), minSize: 2)
+        numClusters = (labels.max() ?? 0) + 1
+
+        // Cap at max speakers
+        if numClusters > neuralMaxSpeakers {
+            labels = capClusters(labels: labels, features: sfs.map(\.feat), maxClusters: neuralMaxSpeakers)
+            numClusters = (labels.max() ?? 0) + 1
+        }
+        mplog("diarizer(neural): final → \(numClusters) speaker(s)")
+
+        return mapClustersToEntriesNeural(
+            entries: entries, sfs: sfs, labels: labels,
+            sampleRate: sampleRate, recordingStart: recordingStart,
+            numClusters: numClusters)
+    }
+
     /// Returns raw segment-level diarization results (for testing/evaluation).
     public static func diarizeSegments(
         audioBuffer: [Float],
@@ -523,7 +611,6 @@ public enum SpeakerDiarizer {
         dists.sort()
 
         let count = dists.count
-        let p5  = dists[count * 5 / 100]
         let p25 = dists[count * 25 / 100]
         let p50 = dists[count * 50 / 100]
         let p75 = dists[count * 75 / 100]
@@ -602,6 +689,110 @@ public enum SpeakerDiarizer {
         return fallback
     }
 
+    /// Specialized threshold for neural speaker embeddings.
+    /// Uses multiple strategies to find the right separation point:
+    ///   1. Largest gap in sorted distances (p20-p80 range)
+    ///   2. Histogram valley detection
+    ///   3. Percentile-based fallback using IQR
+    private static func neuralAdaptiveThreshold(features: [[Float]]) -> Float {
+        let n = features.count
+        let minThresh: Float = 0.20
+        let maxThresh: Float = 0.50
+        guard n >= 3 else { return 0.38 }
+
+        var dists: [Float] = []
+        dists.reserveCapacity(n * (n - 1) / 2)
+        for i in 0..<n {
+            for j in (i + 1)..<n {
+                dists.append(1.0 - cosineSimilarity(features[i], features[j]))
+            }
+        }
+        dists.sort()
+
+        let count = dists.count
+        let p10 = dists[count * 10 / 100]
+        let p25 = dists[count * 25 / 100]
+        let p50 = dists[count * 50 / 100]
+        let p75 = dists[count * 75 / 100]
+        let p90 = dists[count * 90 / 100]
+        mplog("diarizer(neural): distances n=\(count) min=\(String(format:"%.4f",dists[0])) p10=\(String(format:"%.4f",p10)) p25=\(String(format:"%.4f",p25)) p50=\(String(format:"%.4f",p50)) p75=\(String(format:"%.4f",p75)) p90=\(String(format:"%.4f",p90)) max=\(String(format:"%.4f",dists[count-1]))")
+
+        let range = dists[count - 1] - dists[0]
+
+        // Single speaker: all distances very tight
+        if range < 0.10 {
+            mplog("diarizer(neural): narrow range (\(String(format:"%.4f",range))) → single speaker")
+            return dists[count - 1] + 0.01
+        }
+
+        // Strategy 1: Find the largest gap in sorted distances (p20-p80)
+        let searchStart = max(1, count * 20 / 100)
+        let searchEnd = min(count - 2, count * 80 / 100)
+        var maxGap: Float = 0
+        var gapIdx = searchStart
+
+        for i in searchStart...searchEnd {
+            let gap = dists[i + 1] - dists[i]
+            if gap > maxGap {
+                maxGap = gap
+                gapIdx = i
+            }
+        }
+
+        // A significant gap (>5% of range) indicates a natural cluster boundary
+        if maxGap > range * 0.05 {
+            let candidate = (dists[gapIdx] + dists[gapIdx + 1]) / 2.0
+            let clamped = min(maxThresh, max(minThresh, candidate))
+            mplog("diarizer(neural): threshold=\(String(format:"%.4f",clamped)) via gap=\(String(format:"%.4f",maxGap)) at p\(gapIdx * 100 / count)")
+            return clamped
+        }
+
+        // Strategy 2: Histogram valley detection — search inner 60% of range
+        let histBins = 30
+        let histMin = p10
+        let histMax = p90
+        let histRange = histMax - histMin
+        guard histRange > 0.05 else {
+            mplog("diarizer(neural): tight inner range → single speaker")
+            return p90 + 0.01
+        }
+        let binW = histRange / Float(histBins)
+        var histogram = [Int](repeating: 0, count: histBins)
+        for d in dists {
+            if d >= histMin && d < histMax {
+                let bin = min(histBins - 1, Int((d - histMin) / binW))
+                histogram[bin] += 1
+            }
+        }
+
+        // Find deepest valley between two peaks
+        var bestValleyBin = -1
+        var bestValleyScore: Float = .infinity
+        for b in 2..<(histBins - 2) {
+            let left = Float(histogram[b - 2] + histogram[b - 1])
+            let center = Float(histogram[b])
+            let right = Float(histogram[b + 1] + histogram[b + 2])
+            let score = center - (left + right) / 4.0
+            if score < bestValleyScore {
+                bestValleyScore = score
+                bestValleyBin = b
+            }
+        }
+
+        if bestValleyScore < 0, bestValleyBin > 0 {
+            let candidate = histMin + (Float(bestValleyBin) + 0.5) * binW
+            let clamped = min(maxThresh, max(minThresh, candidate))
+            mplog("diarizer(neural): threshold=\(String(format:"%.4f",clamped)) via valley at bin \(bestValleyBin)/\(histBins)")
+            return clamped
+        }
+
+        // Strategy 3: Percentile-based fallback — midpoint between p25 and p75
+        let iqrMid = (p25 + p75) / 2.0
+        let fallback = min(maxThresh, max(minThresh, iqrMid))
+        mplog("diarizer(neural): threshold=\(String(format:"%.4f",fallback)) via IQR midpoint (p25=\(String(format:"%.3f",p25)) p75=\(String(format:"%.3f",p75)))")
+        return fallback
+    }
+
     private static func agglomerativeCluster(features: [[Float]], threshold: Float) -> [Int] {
         let n = features.count
         guard n >= 2 else { return Array(0..<n) }
@@ -659,11 +850,164 @@ public enum SpeakerDiarizer {
         return clusterOf.map { remap[$0]! }
     }
 
-    // MARK: - Map clusters → transcript entries
+    // MARK: - Post-clustering refinement
+
+    /// Merge clusters with fewer than `minSize` segments into the nearest larger cluster.
+    private static func mergeSmallClusters(labels: [Int], features: [[Float]], minSize: Int) -> [Int] {
+        let n = labels.count
+        guard n > 0 else { return labels }
+
+        var result = labels
+        let numClusters = (labels.max() ?? 0) + 1
+
+        // Count members per cluster
+        var counts = [Int](repeating: 0, count: numClusters)
+        for l in labels { counts[l] += 1 }
+
+        let largeClusters = (0..<numClusters).filter { counts[$0] >= minSize }
+        guard !largeClusters.isEmpty else { return labels }
+
+        // Compute centroid for each large cluster
+        let dim = features[0].count
+        var centroids = [[Float]](repeating: [Float](repeating: 0, count: dim), count: numClusters)
+        for i in 0..<n {
+            let c = labels[i]
+            for d in 0..<dim { centroids[c][d] += features[i][d] }
+        }
+        for c in largeClusters {
+            let inv = 1.0 / Float(counts[c])
+            for d in 0..<dim { centroids[c][d] *= inv }
+        }
+
+        // Reassign small cluster members to nearest large cluster centroid
+        for i in 0..<n {
+            if counts[result[i]] < minSize {
+                var bestC = largeClusters[0]
+                var bestSim: Float = -1
+                for c in largeClusters {
+                    let sim = cosineSimilarity(features[i], centroids[c])
+                    if sim > bestSim { bestSim = sim; bestC = c }
+                }
+                result[i] = bestC
+            }
+        }
+
+        return compactLabels(result)
+    }
+
+    /// Iteratively merge the two closest clusters until at most `maxClusters` remain.
+    private static func capClusters(labels: [Int], features: [[Float]], maxClusters: Int) -> [Int] {
+        var result = labels
+        var numClusters = (result.max() ?? 0) + 1
+
+        while numClusters > maxClusters {
+            let dim = features[0].count
+            var centroids = [[Float]](repeating: [Float](repeating: 0, count: dim), count: numClusters)
+            var counts = [Int](repeating: 0, count: numClusters)
+            for i in 0..<result.count {
+                let c = result[i]
+                counts[c] += 1
+                for d in 0..<dim { centroids[c][d] += features[i][d] }
+            }
+            let active = (0..<numClusters).filter { counts[$0] > 0 }
+            for c in active {
+                let inv = 1.0 / Float(counts[c])
+                for d in 0..<dim { centroids[c][d] *= inv }
+            }
+
+            var bestI = active[0], bestJ = active[1]
+            var bestSim: Float = -2
+            for ai in 0..<active.count {
+                for aj in (ai+1)..<active.count {
+                    let sim = cosineSimilarity(centroids[active[ai]], centroids[active[aj]])
+                    if sim > bestSim {
+                        bestSim = sim
+                        bestI = active[ai]; bestJ = active[aj]
+                    }
+                }
+            }
+
+            for i in 0..<result.count where result[i] == bestJ {
+                result[i] = bestI
+            }
+            result = compactLabels(result)
+            numClusters = (result.max() ?? 0) + 1
+        }
+
+        return result
+    }
+
+    private static func compactLabels(_ labels: [Int]) -> [Int] {
+        let unique = Array(Set(labels)).sorted()
+        var remap = [Int: Int]()
+        for (newID, oldID) in unique.enumerated() { remap[oldID] = newID }
+        return labels.map { remap[$0]! }
+    }
+
+    // MARK: - Map clusters → transcript entries (neural — nearest-neighbor)
 
     private struct SegmentResult {
         let idx: Int; let start: Int; let end: Int; let feat: [Float]
     }
+
+    /// Maps clusters to entries using time overlap, falling back to nearest segment
+    /// when no overlap is found (handles timestamp misalignment).
+    private static func mapClustersToEntriesNeural(
+        entries: [TranscriptEntry],
+        sfs: [SegmentResult],
+        labels: [Int],
+        sampleRate: Double,
+        recordingStart: Date,
+        numClusters: Int
+    ) -> [DiarizedEntry] {
+        let onlyOne = numClusters <= 1
+        return entries.enumerated().map { i, entry in
+            if entry.speaker == "You" {
+                return DiarizedEntry(originalIndex: i, speaker: "You")
+            }
+            if onlyOne {
+                return DiarizedEntry(originalIndex: i, speaker: "Speaker 1")
+            }
+
+            let entryOff = entry.timestamp.timeIntervalSince(recordingStart)
+            let entryMid = max(0, Int(entryOff * sampleRate))
+            let entryEnd: Int
+            if i + 1 < entries.count {
+                entryEnd = max(0, Int(entries[i + 1].timestamp.timeIntervalSince(recordingStart) * sampleRate))
+            } else {
+                entryEnd = entryMid + Int(10.0 * sampleRate)
+            }
+
+            // Try overlap-based voting first
+            var votes = [Int](repeating: 0, count: numClusters)
+            for (sfIdx, sf) in sfs.enumerated() {
+                let oStart = max(entryMid, sf.start)
+                let oEnd = min(entryEnd, sf.end)
+                let overlap = max(0, oEnd - oStart)
+                if overlap > 0 { votes[labels[sfIdx]] += overlap }
+            }
+
+            let bestVote = votes.enumerated().max(by: { $0.element < $1.element })?.offset ?? 0
+            if votes[bestVote] > 0 {
+                return DiarizedEntry(originalIndex: i, speaker: "Speaker \(bestVote + 1)")
+            }
+
+            // Fallback: nearest segment by midpoint distance
+            var nearestIdx = 0
+            var nearestDist = Int.max
+            for (sfIdx, sf) in sfs.enumerated() {
+                let segMid = (sf.start + sf.end) / 2
+                let dist = abs(entryMid - segMid)
+                if dist < nearestDist {
+                    nearestDist = dist
+                    nearestIdx = sfIdx
+                }
+            }
+            return DiarizedEntry(originalIndex: i, speaker: "Speaker \(labels[nearestIdx] + 1)")
+        }
+    }
+
+    // MARK: - Map clusters → transcript entries (MFCC legacy)
 
     private static func mapClustersToEntries(
         entries: [TranscriptEntry],

@@ -12,7 +12,7 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
         var errorDescription: String? {
             switch self {
             case .permissionDenied:
-                return "Screen Recording permission is required for system audio capture."
+                return "Screen Recording permission is required. Add MeetingPilot in System Settings → Privacy & Security → Screen Recording."
             case .noDisplayFound:
                 return "No display found for ScreenCaptureKit content filter."
             case .streamNotInitialized:
@@ -27,11 +27,18 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
     private var stream: SCStream?
     private let sampleQueue = DispatchQueue(label: "meetingpilot.system-audio.sample")
 
-    func start() async throws {
-        // Don't use CGPreflightScreenCaptureAccess / CGRequestScreenCaptureAccess —
-        // they are unreliable with ad-hoc signed apps. Instead, let SCShareableContent
-        // trigger the system permission prompt directly.
+    /// Best-effort screen recording permission check.
+    /// NOTE: CGPreflightScreenCaptureAccess is unreliable for self-signed
+    /// apps — it may return false even when permission is granted. Use only
+    /// as a UI hint, never as a gate.
+    static var hasScreenRecordingPermission: Bool {
+        CGPreflightScreenCaptureAccess()
+    }
 
+    func start() async throws {
+        // Go straight to SCShareableContent. Do NOT gate on
+        // CGPreflightScreenCaptureAccess — it returns false for self-signed
+        // apps even when Screen Recording has been granted.
         let content: SCShareableContent
         do {
             content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)

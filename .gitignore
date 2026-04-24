@@ -1,5 +1,6 @@
 # Swift build artifacts
 .build/
+build/
 *.xcodeproj
 xcuserdata/
 DerivedData/
