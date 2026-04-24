@@ -8,6 +8,9 @@ let package = Package(
         .executable(name: "MeetingPilot", targets: ["MeetingPilot"]),
         .executable(name: "DiarizeTest", targets: ["DiarizeTest"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/argmaxinc/WhisperKit", "0.9.0"..<"0.12.0"),
+    ],
     targets: [
         .target(
             name: "MeetingPilotCore",
@@ -15,7 +18,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "MeetingPilot",
-            dependencies: ["MeetingPilotCore"],
+            dependencies: [
+                "MeetingPilotCore",
+                .product(name: "WhisperKit", package: "WhisperKit"),
+            ],
             path: "Sources/MeetingPilot",
             exclude: ["Info.plist"],
             linkerSettings: [

@@ -2,19 +2,43 @@ import Foundation
 import MeetingPilotCore
 
 enum ScriptExporter {
-    static func exportScript(content: String) throws -> URL {
+
+    /// Per-session export: creates a timestamped folder containing transcript
+    /// and optionally copies audio files into it.
+    static func exportSession(
+        content: String,
+        micAudioURL: URL?,
+        systemAudioURL: URL?,
+        startedAt: Date?
+    ) throws -> URL {
         let fm = FileManager.default
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents")
-        let outputDir = docs.appendingPathComponent("MeetingPilotScripts", isDirectory: true)
-        try fm.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        let baseDir = docs.appendingPathComponent("MeetingPilotScripts", isDirectory: true)
+        try fm.createDirectory(at: baseDir, withIntermediateDirectories: true)
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let name = "\(formatter.string(from: Date()))_meeting-pilot.md"
-        let url = outputDir.appendingPathComponent(name)
-        try content.write(to: url, atomically: true, encoding: .utf8)
-        return url
+        let folderName = formatter.string(from: startedAt ?? Date())
+        let sessionDir = baseDir.appendingPathComponent(folderName, isDirectory: true)
+        try fm.createDirectory(at: sessionDir, withIntermediateDirectories: true)
+
+        let transcriptURL = sessionDir.appendingPathComponent("transcript.md")
+        try content.write(to: transcriptURL, atomically: true, encoding: .utf8)
+
+        if let src = micAudioURL, fm.fileExists(atPath: src.path) {
+            let dst = sessionDir.appendingPathComponent("audio-mic.m4a")
+            try? fm.removeItem(at: dst)
+            try fm.moveItem(at: src, to: dst)
+        }
+
+        if let src = systemAudioURL, fm.fileExists(atPath: src.path) {
+            let dst = sessionDir.appendingPathComponent("audio-system.m4a")
+            try? fm.removeItem(at: dst)
+            try fm.moveItem(at: src, to: dst)
+        }
+
+        return sessionDir
     }
 
     static func makeScriptFileContent(startedAt: Date?, endedAt: Date?, entries: [TranscriptEntry]) -> String {
@@ -43,6 +67,9 @@ enum ScriptExporter {
             for entry in entries {
                 let ts = timeFmt.string(from: entry.timestamp)
                 lines.append("[\(ts)] \(entry.speaker): \(entry.text)")
+                if let translated = entry.translatedText {
+                    lines.append("    → \(translated)")
+                }
             }
         }
 
