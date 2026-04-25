@@ -6,10 +6,10 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "MeetingPilot", targets: ["MeetingPilot"]),
-        .executable(name: "DiarizeTest", targets: ["DiarizeTest"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/argmaxinc/WhisperKit", "0.9.0"..<"0.12.0"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-examples", exact: "2.21.2"),
+        .package(url: "https://github.com/huggingface/swift-transformers", exact: "0.1.14"),
     ],
     targets: [
         .target(
@@ -20,7 +20,8 @@ let package = Package(
             name: "MeetingPilot",
             dependencies: [
                 "MeetingPilotCore",
-                .product(name: "WhisperKit", package: "WhisperKit"),
+                .product(name: "MLXLLM", package: "mlx-swift-examples"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-examples"),
             ],
             path: "Sources/MeetingPilot",
             exclude: ["Info.plist"],
@@ -32,11 +33,6 @@ let package = Package(
                     "-Xlinker", "Sources/MeetingPilot/Info.plist"
                 ])
             ]
-        ),
-        .executableTarget(
-            name: "DiarizeTest",
-            dependencies: ["MeetingPilotCore"],
-            path: "Sources/DiarizeTest"
         ),
     ]
 )

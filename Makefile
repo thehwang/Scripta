@@ -27,13 +27,19 @@ run: setup-cert
 	OLD_HASH=""; \
 	if [ -f "$$HASH_FILE" ]; then OLD_HASH=$$(cat "$$HASH_FILE"); fi; \
 	if [ "$$NEW_HASH" != "$$OLD_HASH" ] || ! codesign --verify --deep --strict "$(DEV_BUNDLE)" 2>/dev/null; then \
-		echo "Binary changed — copying and signing with Hardened Runtime ..."; \
+		echo "Binary changed — copying and signing ..."; \
 		cp "$$SRC_BIN" "$$DST_BIN"; \
 		cp "Sources/MeetingPilot/Info.plist" "$$CONTENTS_DIR/Info.plist"; \
+		MLX_METALLIB="$$(python3 -c 'import mlx; print(mlx.__path__[0])' 2>/dev/null)/lib/mlx.metallib"; \
+		if [ -f "$$MLX_METALLIB" ]; then \
+			cp "$$MLX_METALLIB" "$$MACOS_DIR/mlx.metallib"; \
+			echo "Copied mlx.metallib from Python MLX package."; \
+		else \
+			echo "WARNING: mlx.metallib not found — AI summary may not work."; \
+		fi; \
 		echo "$$NEW_HASH" > "$$HASH_FILE"; \
 		/usr/bin/codesign --force --sign "$(CERT_NAME)" \
 			--entitlements $(ENTITLEMENTS) \
-			--options runtime \
 			--deep "$(DEV_BUNDLE)"; \
 		echo "Signed. TCC may ask for permissions on first launch."; \
 	else \
@@ -53,14 +59,20 @@ install: setup-cert
 	mkdir -p "$$MACOS_DIR"; \
 	cp "$$BIN_PATH/$(APP)" "$$MACOS_DIR/$(APP)"; \
 	cp "Sources/MeetingPilot/Info.plist" "$$CONTENTS_DIR/Info.plist"; \
+	MLX_METALLIB="$$(python3 -c 'import mlx; print(mlx.__path__[0])' 2>/dev/null)/lib/mlx.metallib"; \
+	if [ -f "$$MLX_METALLIB" ]; then \
+		cp "$$MLX_METALLIB" "$$MACOS_DIR/mlx.metallib"; \
+		echo "Copied mlx.metallib from Python MLX package."; \
+	else \
+		echo "WARNING: mlx.metallib not found. Install with: pip3 install mlx==0.21.1"; \
+	fi; \
 	xattr -cr "$$APP_BUNDLE"; \
 	/usr/bin/codesign --force --sign "$(CERT_NAME)" \
 		--entitlements $(ENTITLEMENTS) \
-		--options runtime \
 		--deep "$$APP_BUNDLE"; \
 	echo ""; \
 	echo "Installed to $(INSTALL_DIR)/$(APP).app"; \
-	echo "Signed with Hardened Runtime + certificate '$(CERT_NAME)'"; \
+	echo "Signed with certificate '$(CERT_NAME)'"; \
 	echo ""; \
 	echo "First launch: open /Applications/$(APP).app"; \
 	echo "Grant Microphone + Screen Recording when prompted."

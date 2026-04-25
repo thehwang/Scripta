@@ -6,17 +6,17 @@ import SwiftUI
 // MARK: - Color Theme
 
 private enum Theme {
-    static let bg = Color(red: 0.071, green: 0.075, blue: 0.090)           // #121317
-    static let surface = Color(red: 0.118, green: 0.122, blue: 0.137)      // #1e1f23
-    static let surfaceHigh = Color(red: 0.161, green: 0.165, blue: 0.180)  // #292a2e
+    static let bg = Color(red: 0.071, green: 0.075, blue: 0.090)
+    static let surface = Color(red: 0.118, green: 0.122, blue: 0.137)
+    static let surfaceHigh = Color(red: 0.161, green: 0.165, blue: 0.180)
     static let border = Color.white.opacity(0.06)
     static let borderLight = Color.white.opacity(0.10)
-    static let accent = Color(red: 0.294, green: 0.557, blue: 1.0)         // #4b8eff
-    static let accentSoft = Color(red: 0.678, green: 0.776, blue: 1.0)     // #adc6ff
-    static let textPrimary = Color(red: 0.890, green: 0.886, blue: 0.906)  // #e3e2e7
+    static let accent = Color(red: 0.294, green: 0.557, blue: 1.0)
+    static let accentSoft = Color(red: 0.678, green: 0.776, blue: 1.0)
+    static let textPrimary = Color(red: 0.890, green: 0.886, blue: 0.906)
     static let textSecondary = Color(red: 0.545, green: 0.565, blue: 0.627)
     static let textMuted = Color(red: 0.373, green: 0.384, blue: 0.420)
-    static let red = Color(red: 0.576, green: 0.0, blue: 0.039)            // #93000a
+    static let red = Color(red: 0.576, green: 0.0, blue: 0.039)
     static let redBright = Color(red: 1.0, green: 0.706, blue: 0.671)
 }
 
@@ -24,11 +24,15 @@ private enum Theme {
 
 struct ContentView: View {
     @ObservedObject var recorder: MeetingRecorder
+    @ObservedObject var summaryModelManager: SummaryModelManager
     @ObservedObject var translationService: TranslationService
+    var onOpenModelSettings: (() -> Void)?
 
+    @StateObject private var summaryService = SummaryService()
     @State private var translatedEntryCount = 0
     @State private var hasMicPermission = false
     @State private var now = Date()
+    @State private var showSummary = false
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -44,8 +48,16 @@ struct ContentView: View {
                     if !hasMicPermission && recorder.state == .idle {
                         permissionBanner.padding(.horizontal, 20).padding(.top, 16)
                     }
+                    if !summaryModelManager.isReady && recorder.state == .idle {
+                        aiModelBanner.padding(.horizontal, 20).padding(.top, 16)
+                    }
                     statusStrip.padding(.horizontal, 20).padding(.top, 16)
                     transcriptPanel.padding(.horizontal, 20).padding(.top, 12)
+
+                    if showSummary || summaryService.isGenerating || !summaryService.streamingText.isEmpty {
+                        summaryPanel.padding(.horizontal, 20).padding(.top, 8)
+                    }
+
                     exportStrip.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 8)
                 }
 
@@ -53,9 +65,14 @@ struct ContentView: View {
                 bottomBar
             }
         }
-        .frame(minWidth: 760, minHeight: 600)
+        .frame(minWidth: 760, minHeight: 680)
         .preferredColorScheme(.dark)
         .onChange(of: recorder.entries.count) { translateNewEntries() }
+        .onChange(of: recorder.state) {
+            if recorder.state == .completed && summaryModelManager.isReady {
+                generateSummary()
+            }
+        }
         .onAppear { refreshPermissionStatus() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshPermissionStatus()
@@ -103,7 +120,7 @@ struct ContentView: View {
                 .padding(.trailing, 8)
             }
 
-            enginePicker
+            aiModelBadge
         }
         .padding(.horizontal, 16)
         .frame(height: 44)
@@ -128,18 +145,36 @@ struct ContentView: View {
         .overlay(Capsule().stroke(Theme.accent.opacity(0.2), lineWidth: 0.5))
     }
 
-    private var enginePicker: some View {
-        Picker("", selection: $recorder.transcriptionEngine) {
-            ForEach(TranscriptionEngine.allCases, id: \.self) { engine in
-                Text(engine.rawValue).tag(engine)
+    private var aiModelBadge: some View {
+        Button {
+            onOpenModelSettings?()
+        } label: {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(summaryModelManager.isReady ? .green : .orange)
+                    .frame(width: 6, height: 6)
+                Text(summaryModelManager.isReady ? "AI Ready" : "Setup AI Model")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(summaryModelManager.isReady ? .green.opacity(0.8) : .orange.opacity(0.9))
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                summaryModelManager.isReady
+                    ? Color.white.opacity(0.04)
+                    : Color.orange.opacity(0.1),
+                in: Capsule()
+            )
+            .overlay(
+                summaryModelManager.isReady
+                    ? nil
+                    : Capsule().stroke(Color.orange.opacity(0.2), lineWidth: 0.5)
+            )
         }
-        .pickerStyle(.segmented)
-        .frame(width: 180)
-        .disabled(recorder.isRecording || recorder.state == .transcribing)
+        .buttonStyle(.plain)
     }
 
-    // MARK: - Status Strip (Duration + Info)
+    // MARK: - Status Strip
 
     private var statusStrip: some View {
         HStack(alignment: .bottom) {
@@ -203,6 +238,38 @@ struct ContentView: View {
         .padding(.vertical, 10)
         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.15), lineWidth: 0.5))
+    }
+
+    // MARK: - AI Model Banner
+
+    private var aiModelBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .foregroundStyle(Theme.accent)
+                .font(.system(size: 18))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("AI Summary not configured")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Text("Download an AI model to get meeting summaries and action items after recording.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            Spacer()
+
+            Button("Setup AI Model") {
+                onOpenModelSettings?()
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Theme.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.12), lineWidth: 0.5))
     }
 
     // MARK: - Transcript Panel
@@ -303,6 +370,77 @@ struct ContentView: View {
         return fmt.string(from: date)
     }
 
+    // MARK: - Summary Panel
+
+    private var summaryPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.accent)
+                Text("AI Summary")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+
+                if summaryService.isGenerating {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.leading, 4)
+                }
+
+                Spacer()
+
+                if !summaryService.streamingText.isEmpty {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(summaryService.streamingText, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.textMuted)
+                    .help("Copy summary")
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Divider().background(Theme.border)
+
+            if !summaryService.lastError.isEmpty {
+                Text(summaryService.lastError)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.redBright)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+            }
+
+            if summaryService.streamingText.isEmpty && !summaryService.isGenerating {
+                Text("Summary will appear after recording completes.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textMuted)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 16)
+            } else {
+                ScrollView {
+                    Text(summaryService.streamingText)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.textPrimary)
+                        .textSelection(.enabled)
+                        .lineSpacing(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
+                .frame(maxHeight: 200)
+            }
+        }
+        .background(Theme.surface.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.accent.opacity(0.15), lineWidth: 0.5))
+    }
+
     // MARK: - Export Strip
 
     private var exportStrip: some View {
@@ -357,6 +495,10 @@ struct ContentView: View {
 
             Spacer()
 
+            if recorder.state == .completed && !recorder.entries.isEmpty {
+                summaryButton
+            }
+
             if recorder.isRecording {
                 stopButton
             } else {
@@ -370,6 +512,25 @@ struct ContentView: View {
                 .background(.ultraThinMaterial)
                 .overlay(alignment: .top) { Divider().background(Theme.borderLight) }
         }
+    }
+
+    private var summaryButton: some View {
+        Button {
+            generateSummary()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 12))
+                Text(summaryService.isGenerating ? "Generating..." : "Summarize")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(summaryModelManager.isReady ? Theme.accentSoft : Theme.textMuted)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(Theme.accent.opacity(summaryModelManager.isReady ? 0.15 : 0.05), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!summaryModelManager.isReady || summaryService.isGenerating)
     }
 
     private var startButton: some View {
@@ -438,6 +599,25 @@ struct ContentView: View {
     private var shouldShowTranslation: Bool {
         translationService.isEnabled &&
         (translationService.displayMode == .bilingual || translationService.displayMode == .translated)
+    }
+
+    // MARK: - Summary Generation
+
+    private func generateSummary() {
+        showSummary = true
+        Task {
+            await summaryService.generateSummary(from: recorder.entries, using: summaryModelManager)
+            if !summaryService.streamingText.isEmpty, !recorder.exportedFilePath.isEmpty {
+                saveSummaryToExport()
+            }
+        }
+    }
+
+    private func saveSummaryToExport() {
+        let path = recorder.exportedFilePath
+        guard !path.isEmpty, !summaryService.streamingText.isEmpty else { return }
+        let summaryURL = URL(fileURLWithPath: path).appendingPathComponent("summary.md")
+        try? summaryService.streamingText.write(to: summaryURL, atomically: true, encoding: .utf8)
     }
 
     // MARK: - Translation

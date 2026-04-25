@@ -4,11 +4,6 @@ import Foundation
 import MeetingPilotCore
 import Speech
 
-enum TranscriptionEngine: String, CaseIterable {
-    case apple = "Apple Speech"
-    case whisper = "Whisper"
-}
-
 final class MeetingRecorder: NSObject, ObservableObject {
     enum State: String {
         case idle = "Idle"
@@ -24,7 +19,6 @@ final class MeetingRecorder: NSObject, ObservableObject {
     @Published private(set) var finalScript: String = ""
     @Published private(set) var exportedFilePath: String = ""
     @Published private(set) var lastError: String = ""
-    @Published var transcriptionEngine: TranscriptionEngine = .apple
     @Published var saveAudio: Bool = true
 
     var isRecording: Bool { state == .recording }
@@ -45,27 +39,21 @@ final class MeetingRecorder: NSObject, ObservableObject {
         interleaved: false
     )!
 
-    // Audio file writers (AAC M4A via AVAudioFile)
     private var micAudioFile: AVAudioFile?
     private var systemAudioFile: AVAudioFile?
     private var writerMicConverter: AVAudioConverter?
     private var micTempURL: URL?
     private var systemTempURL: URL?
 
-    // Apple Speech engine state
     private var micRequest: SFSpeechAudioBufferRecognitionRequest?
     private var micTask: SFSpeechRecognitionTask?
     private var systemRequest: SFSpeechAudioBufferRecognitionRequest?
     private var systemTask: SFSpeechRecognitionTask?
     private var systemAudioConverter: AVAudioConverter?
 
-    // Whisper engine state
-    private var whisperTranscriber: WhisperTranscriber?
-
     @Published private(set) var recordingStartedAt: Date?
     private var recordingEndedAt: Date?
 
-    // Per-speaker accumulation state (Apple Speech engine).
     private var committedMicLen: Int = 0
     private var committedSystemLen: Int = 0
     private var activeMicIdx: Int?
@@ -90,20 +78,15 @@ final class MeetingRecorder: NSObject, ObservableObject {
         do {
             mplog("startRecording: requesting permissions...")
             try await ensurePermissions()
-            mplog("startRecording: permissions OK, engine=\(transcriptionEngine.rawValue)")
+            mplog("startRecording: permissions OK")
 
-            switch transcriptionEngine {
-            case .apple:
-                try await beginAppleSpeechPipeline()
-            case .whisper:
-                try await beginWhisperPipeline()
-            }
+            try await beginAppleSpeechPipeline()
 
             startAudioWriters()
             recordingStartedAt = Date()
             recordingEndedAt = nil
             state = .recording
-            statusMessage = "Recording — dual channel (You + Remote) via \(transcriptionEngine.rawValue)..."
+            statusMessage = "Recording — dual channel (You + Remote)..."
             mplog("startRecording: pipeline started, state = recording")
         } catch let error as SystemAudioCapture.CaptureError where error == .permissionDenied {
             state = .idle
@@ -126,13 +109,8 @@ final class MeetingRecorder: NSObject, ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
 
-        switch transcriptionEngine {
-        case .apple:
-            micRequest?.endAudio()
-            systemRequest?.endAudio()
-        case .whisper:
-            whisperTranscriber?.stop()
-        }
+        micRequest?.endAudio()
+        systemRequest?.endAudio()
 
         Task { await systemAudioCapture.stop() }
 
@@ -143,15 +121,6 @@ final class MeetingRecorder: NSObject, ObservableObject {
                 self.finishAndExport()
             }
         }
-    }
-
-    /// Configure Whisper transcriber with a downloaded model path.
-    /// Does not change the active engine — user can switch manually.
-    func loadWhisperModel(path: String) async throws {
-        let transcriber = WhisperTranscriber()
-        try await transcriber.load(modelPath: path)
-        whisperTranscriber = transcriber
-        mplog("Whisper model loaded from \(path), engine stays \(transcriptionEngine.rawValue)")
     }
 
     // MARK: Setup
@@ -177,117 +146,17 @@ final class MeetingRecorder: NSObject, ObservableObject {
     }
 
     private func ensurePermissions() async throws {
-        // Permissions are pre-granted via PermissionsView — only verify, never prompt.
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         guard micStatus == .authorized else {
             throw NSError(domain: "MeetingPilot", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "Microphone permission not granted. Please enable it in the Permissions screen."])
         }
 
-        if transcriptionEngine == .apple {
-            let speechStatus = SFSpeechRecognizer.authorizationStatus()
-            guard speechStatus == .authorized else {
-                throw NSError(domain: "MeetingPilot", code: 1,
-                              userInfo: [NSLocalizedDescriptionKey: "Speech recognition not granted. Please enable it in the Permissions screen."])
-            }
+        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        guard speechStatus == .authorized else {
+            throw NSError(domain: "MeetingPilot", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Speech recognition not granted. Please enable it in the Permissions screen."])
         }
-    }
-
-    // MARK: Whisper Pipeline
-
-    private func beginWhisperPipeline() async throws {
-        guard let transcriber = whisperTranscriber else {
-            throw NSError(domain: "MeetingPilot", code: 10,
-                          userInfo: [NSLocalizedDescriptionKey: "Whisper model not loaded. Please download a model first."])
-        }
-
-        transcriber.onTranscription = { [weak self] text, channel in
-            guard let self else { return }
-            let speaker = channel == .mic ? "You" : "Remote"
-            self.entries.append(TranscriptEntry(speaker: speaker, text: text))
-        }
-
-        // Mic channel
-        let inputNode = audioEngine.inputNode
-        let micFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.removeTap(onBus: 0)
-
-        let targetRate = recognitionFormat.sampleRate
-        var micConverter: AVAudioConverter?
-        if micFormat.sampleRate != targetRate || micFormat.channelCount != 1 {
-            micConverter = AVAudioConverter(from: micFormat, to: recognitionFormat)
-        }
-
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: micFormat) { [weak self] buffer, _ in
-            guard let self else { return }
-            if let converter = micConverter {
-                if let converted = self.convertBuffer(buffer, using: converter) {
-                    self.writeMicAudio(converted)
-                    transcriber.appendAudio(converted, channel: .mic)
-                }
-            } else {
-                self.writeMicAudio(buffer)
-                transcriber.appendAudio(buffer, channel: .mic)
-            }
-        }
-
-        audioEngine.prepare()
-        try audioEngine.start()
-
-        // System audio channel
-        systemAudioCapture.onAudioSampleBuffer = { [weak self] sampleBuffer in
-            self?.appendSystemAudioForWhisper(sampleBuffer)
-        }
-        systemAudioCapture.onError = { [weak self] error in
-            DispatchQueue.main.async {
-                guard let self, self.state == .recording || self.state == .transcribing else { return }
-                self.setFailure("System audio capture failed: \(error.localizedDescription)")
-            }
-        }
-        try await systemAudioCapture.start()
-        mplog("Whisper pipeline: system audio capture started")
-
-        transcriber.start()
-        mplog("Whisper pipeline: both channels active")
-    }
-
-    private func appendSystemAudioForWhisper(_ sampleBuffer: CMSampleBuffer) {
-        guard let pcm = Self.pcmBuffer(from: sampleBuffer) else { return }
-
-        let buffer: AVAudioPCMBuffer
-        if pcm.format.sampleRate == recognitionFormat.sampleRate &&
-            pcm.format.channelCount == recognitionFormat.channelCount &&
-            pcm.format.commonFormat == recognitionFormat.commonFormat {
-            buffer = pcm
-        } else {
-            guard let converted = convertToRecognitionFormat(pcm) else { return }
-            buffer = converted
-        }
-
-        writeSystemAudio(buffer)
-        whisperTranscriber?.appendAudio(buffer, channel: .system)
-    }
-
-    private func convertBuffer(_ input: AVAudioPCMBuffer, using converter: AVAudioConverter) -> AVAudioPCMBuffer? {
-        let frameCount = AVAudioFrameCount(
-            Double(input.frameLength) * recognitionFormat.sampleRate / input.format.sampleRate + 32
-        )
-        guard let output = AVAudioPCMBuffer(pcmFormat: recognitionFormat, frameCapacity: max(frameCount, 32)) else {
-            return nil
-        }
-        var provided = false
-        var error: NSError?
-        let status = converter.convert(to: output, error: &error) { _, outStatus in
-            if provided {
-                outStatus.pointee = .noDataNow
-                return nil
-            }
-            provided = true
-            outStatus.pointee = .haveData
-            return input
-        }
-        guard status != .error else { return nil }
-        return output
     }
 
     // MARK: Apple Speech Pipeline
@@ -341,7 +210,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         mplog("Apple Speech pipeline: both recognition tasks created")
     }
 
-    // MARK: Apple Speech - Recognition result handling
+    // MARK: Recognition result handling
 
     private func handleRecognitionResult(result: SFSpeechRecognitionResult?, error: Error?, speaker: String) {
         DispatchQueue.main.async { [weak self] in
@@ -547,7 +416,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         return output
     }
 
-    // MARK: Audio File Writers (AVAudioFile — handles timestamps & encoding)
+    // MARK: Audio File Writers
 
     private static let audioFileSettings: [String: Any] = [
         AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -575,7 +444,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
                 from: audioEngine.inputNode.outputFormat(forBus: 0),
                 to: file.processingFormat
             )
-            mplog("Audio writer: mic → \(micTempURL!.lastPathComponent) procFmt=\(file.processingFormat)")
+            mplog("Audio writer: mic → \(micTempURL!.lastPathComponent)")
         } catch {
             mplog("Failed to create mic audio file: \(error)")
         }
@@ -588,13 +457,12 @@ final class MeetingRecorder: NSObject, ObservableObject {
                 interleaved: false
             )
             systemAudioFile = file
-            mplog("Audio writer: system → \(systemTempURL!.lastPathComponent) procFmt=\(file.processingFormat)")
+            mplog("Audio writer: system → \(systemTempURL!.lastPathComponent)")
         } catch {
             mplog("Failed to create system audio file: \(error)")
         }
     }
 
-    /// Convert buffer to the file's processingFormat, then write on the serial queue.
     private func writeMicAudio(_ buffer: AVAudioPCMBuffer) {
         guard let file = micAudioFile, let converter = writerMicConverter else { return }
 
@@ -626,8 +494,6 @@ final class MeetingRecorder: NSObject, ObservableObject {
         }
     }
 
-    /// System audio is already converted to recognitionFormat; re-convert to file
-    /// processingFormat if they differ.
     private func writeSystemAudio(_ buffer: AVAudioPCMBuffer) {
         guard let file = systemAudioFile else { return }
 
@@ -740,7 +606,6 @@ final class MeetingRecorder: NSObject, ObservableObject {
         micTask?.cancel(); systemTask?.cancel()
         micTask = nil; systemTask = nil
         micRequest = nil; systemRequest = nil
-        whisperTranscriber?.stop()
     }
 
     // MARK: CMSampleBuffer -> AVAudioPCMBuffer
@@ -800,4 +665,3 @@ final class MeetingRecorder: NSObject, ObservableObject {
         return pcmBuffer
     }
 }
-

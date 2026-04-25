@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SetupView: View {
-    @ObservedObject var modelManager: ModelManager
+    @ObservedObject var modelManager: SummaryModelManager
     var onComplete: () -> Void
 
     var body: some View {
@@ -10,19 +10,20 @@ struct SetupView: View {
             modelList
             statusArea
             Spacer(minLength: 0)
+            skipButton
         }
         .padding(24)
-        .frame(minWidth: 520, minHeight: 480)
+        .frame(minWidth: 540, minHeight: 520)
     }
 
     private var header: some View {
         VStack(spacing: 8) {
-            Image(systemName: "waveform.circle.fill")
+            Image(systemName: "sparkles")
                 .font(.system(size: 48))
                 .foregroundStyle(.blue)
-            Text("Meeting Pilot Setup")
+            Text("AI Summary Model")
                 .font(.system(size: 22, weight: .semibold))
-            Text("Choose a Whisper model for speech transcription.\nLarger models are more accurate but use more disk space and memory.")
+            Text("Choose an AI model for meeting summaries and action items.\nSmaller models are faster; larger models produce better results.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .font(.callout)
@@ -31,14 +32,14 @@ struct SetupView: View {
 
     private var modelList: some View {
         VStack(spacing: 8) {
-            ForEach(ModelManager.availableModels) { model in
+            ForEach(SummaryModelManager.availableModels) { model in
                 modelRow(model)
             }
         }
     }
 
-    private func modelRow(_ model: WhisperModelInfo) -> some View {
-        let isSelected = modelManager.selectedModelName == model.id
+    private func modelRow(_ model: LLMModelInfo) -> some View {
+        let isSelected = modelManager.selectedModelId == model.id
         return HStack(spacing: 12) {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(isSelected ? .blue : .secondary)
@@ -48,8 +49,8 @@ struct SetupView: View {
                 HStack(spacing: 6) {
                     Text(model.name)
                         .fontWeight(.medium)
-                    if model.isRecommended {
-                        Text("Recommended")
+                    if model.isDefault {
+                        Text("Default")
                             .font(.caption2)
                             .fontWeight(.semibold)
                             .padding(.horizontal, 6)
@@ -58,7 +59,7 @@ struct SetupView: View {
                             .foregroundStyle(.blue)
                     }
                 }
-                Text("\(model.sizeDescription) — \(model.accuracyDescription)")
+                Text("\(model.sizeDescription) — \(model.description)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -69,7 +70,7 @@ struct SetupView: View {
         .background(isSelected ? Color.blue.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
         .contentShape(Rectangle())
         .onTapGesture {
-            modelManager.selectedModelName = model.id
+            modelManager.selectedModelId = model.id
         }
     }
 
@@ -82,7 +83,7 @@ struct SetupView: View {
             case .downloading(let progress):
                 VStack(spacing: 8) {
                     ProgressView(value: progress, total: 1.0) {
-                        Text("Downloading \(modelManager.selectedModelName)...")
+                        Text("Downloading model...")
                             .font(.callout)
                     }
                     Text("\(Int(progress * 100))%")
@@ -90,12 +91,20 @@ struct SetupView: View {
                         .foregroundStyle(.secondary)
                 }
 
+            case .loading:
+                VStack(spacing: 8) {
+                    ProgressView()
+                    Text("Loading model into memory...")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
             case .ready:
                 VStack(spacing: 10) {
-                    Label("Model ready", systemImage: "checkmark.circle.fill")
+                    Label("AI model ready", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .font(.callout.weight(.medium))
-                    Button("Start Meeting Pilot") {
+                    Button("Continue to Meeting Pilot") {
                         onComplete()
                     }
                     .buttonStyle(.borderedProminent)
@@ -104,11 +113,12 @@ struct SetupView: View {
 
             case .failed(let message):
                 VStack(spacing: 8) {
-                    Label("Download failed", systemImage: "exclamationmark.triangle.fill")
+                    Label("Failed to load model", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
                     Text(message)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(3)
                     downloadButton
                 }
             }
@@ -118,13 +128,22 @@ struct SetupView: View {
     private var downloadButton: some View {
         Button {
             Task {
-                await modelManager.downloadSelectedModel()
+                await modelManager.loadSelectedModel()
             }
         } label: {
-            Label("Download Model", systemImage: "arrow.down.circle")
-                .frame(minWidth: 200)
+            Label("Download & Load Model", systemImage: "arrow.down.circle")
+                .frame(minWidth: 220)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
+    }
+
+    private var skipButton: some View {
+        Button("Skip — use transcription only") {
+            onComplete()
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
+        .buttonStyle(.plain)
     }
 }
