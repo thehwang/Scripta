@@ -62,7 +62,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
     // Whisper engine state
     private var whisperTranscriber: WhisperTranscriber?
 
-    private var recordingStartedAt: Date?
+    @Published private(set) var recordingStartedAt: Date?
     private var recordingEndedAt: Date?
 
     // Per-speaker accumulation state (Apple Speech engine).
@@ -177,41 +177,18 @@ final class MeetingRecorder: NSObject, ObservableObject {
     }
 
     private func ensurePermissions() async throws {
-        // Microphone: check status first, only prompt when .notDetermined
+        // Permissions are pre-granted via PermissionsView — only verify, never prompt.
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-        switch micStatus {
-        case .authorized:
-            break
-        case .notDetermined:
-            let granted = await AVCaptureDevice.requestAccess(for: .audio)
-            guard granted else {
-                throw NSError(domain: "MeetingPilot", code: 2,
-                              userInfo: [NSLocalizedDescriptionKey: "Microphone permission denied. Grant it in System Settings → Privacy & Security → Microphone."])
-            }
-        default:
+        guard micStatus == .authorized else {
             throw NSError(domain: "MeetingPilot", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "Microphone permission denied. Grant it in System Settings → Privacy & Security → Microphone."])
+                          userInfo: [NSLocalizedDescriptionKey: "Microphone permission not granted. Please enable it in the Permissions screen."])
         }
 
-        // Speech recognition: only needed for Apple engine, check status first
         if transcriptionEngine == .apple {
             let speechStatus = SFSpeechRecognizer.authorizationStatus()
-            switch speechStatus {
-            case .authorized:
-                break
-            case .notDetermined:
-                let status = await withCheckedContinuation { continuation in
-                    SFSpeechRecognizer.requestAuthorization { status in
-                        continuation.resume(returning: status)
-                    }
-                }
-                guard status == .authorized else {
-                    throw NSError(domain: "MeetingPilot", code: 1,
-                                  userInfo: [NSLocalizedDescriptionKey: "Speech recognition permission denied. Grant it in System Settings → Privacy & Security → Speech Recognition."])
-                }
-            default:
+            guard speechStatus == .authorized else {
                 throw NSError(domain: "MeetingPilot", code: 1,
-                              userInfo: [NSLocalizedDescriptionKey: "Speech recognition permission denied. Grant it in System Settings → Privacy & Security → Speech Recognition."])
+                              userInfo: [NSLocalizedDescriptionKey: "Speech recognition not granted. Please enable it in the Permissions screen."])
             }
         }
     }
