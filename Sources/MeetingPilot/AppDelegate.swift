@@ -6,7 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var window: NSWindow?
     private let recorder = MeetingRecorder()
-    private let modelManager = ModelManager()
+    private let summaryModelManager = SummaryModelManager()
     private let translationService = TranslationService()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -25,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Open Meeting Pilot", action: #selector(openMainWindow), keyEquivalent: "o")
         menu.addItem(withTitle: "Start/Stop Recording", action: #selector(toggleRecording), keyEquivalent: "r")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Model Settings...", action: #selector(showSetup), keyEquivalent: ",")
+        menu.addItem(withTitle: "AI Model Settings...", action: #selector(showSetup), keyEquivalent: ",")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Meeting Pilot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
@@ -35,11 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPermissionsWindow() {
         let permView = PermissionsView { [weak self] in
-            if self?.modelManager.isReady == true {
-                self?.loadModelAndShowMain()
-            } else {
-                self?.showSetupWindow()
-            }
+            self?.showMainWindow()
         }
         let hosting = NSHostingController(rootView: permView)
         let win = window ?? NSWindow(contentViewController: hosting)
@@ -54,14 +50,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showSetupWindow() {
-        let setupView = SetupView(modelManager: modelManager) { [weak self] in
-            self?.loadModelAndShowMain()
+        let setupView = SetupView(modelManager: summaryModelManager) { [weak self] in
+            self?.showMainWindow()
         }
         let hosting = NSHostingController(rootView: setupView)
         let win = window ?? NSWindow(contentViewController: hosting)
         win.contentViewController = hosting
-        win.title = "Meeting Pilot — Setup"
-        win.setContentSize(NSSize(width: 540, height: 500))
+        win.title = "Meeting Pilot — AI Model Setup"
+        win.setContentSize(NSSize(width: 560, height: 520))
         win.styleMask = [.titled, .closable]
         win.center()
         win.makeKeyAndOrderFront(nil)
@@ -69,38 +65,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window = win
     }
 
-    private func loadModelAndShowMain() {
-        guard let path = modelManager.localModelPath else {
-            showSetupWindow()
-            return
-        }
-
-        Task { @MainActor in
-            do {
-                try await recorder.loadWhisperModel(path: path)
-            } catch {
-                mplog("Failed to load Whisper model: \(error.localizedDescription)")
-                recorder.transcriptionEngine = .apple
-            }
-
-            showMainWindow()
-        }
-    }
-
     private func showMainWindow() {
-        let rootView = ContentView(recorder: recorder, translationService: translationService)
+        let rootView = ContentView(
+            recorder: recorder,
+            summaryModelManager: summaryModelManager,
+            translationService: translationService,
+            onOpenModelSettings: { [weak self] in
+                self?.showSetupWindow()
+            }
+        )
         let hosting = NSHostingController(rootView: rootView)
 
         if let win = window {
             win.contentViewController = hosting
             win.title = "Meeting Pilot"
-            win.setContentSize(NSSize(width: 760, height: 620))
+            win.setContentSize(NSSize(width: 760, height: 680))
             win.styleMask.insert(.resizable)
             win.makeKeyAndOrderFront(nil)
         } else {
             let win = NSWindow(contentViewController: hosting)
             win.title = "Meeting Pilot"
-            win.setContentSize(NSSize(width: 760, height: 620))
+            win.setContentSize(NSSize(width: 760, height: 680))
             win.styleMask.insert(.resizable)
             win.center()
             win.makeKeyAndOrderFront(nil)
@@ -110,11 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openMainWindow() {
-        if modelManager.isReady {
-            showMainWindow()
-        } else {
-            showSetupWindow()
-        }
+        showMainWindow()
     }
 
     @objc private func showSetup() {
