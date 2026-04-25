@@ -11,12 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
-
-        if modelManager.isReady {
-            loadModelAndShowMain()
-        } else {
-            showSetupWindow()
-        }
+        showPermissionsWindow()
     }
 
     private func setupMenuBar() {
@@ -36,6 +31,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         item.menu = menu
         statusItem = item
+    }
+
+    private func showPermissionsWindow() {
+        let permView = PermissionsView { [weak self] in
+            if self?.modelManager.isReady == true {
+                self?.loadModelAndShowMain()
+            } else {
+                self?.showSetupWindow()
+            }
+        }
+        let hosting = NSHostingController(rootView: permView)
+        let win = window ?? NSWindow(contentViewController: hosting)
+        win.contentViewController = hosting
+        win.title = "Meeting Pilot"
+        win.setContentSize(NSSize(width: 740, height: 480))
+        win.styleMask = [.titled, .closable]
+        win.center()
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window = win
     }
 
     private func showSetupWindow() {

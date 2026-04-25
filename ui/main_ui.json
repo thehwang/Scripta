@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Meeting Pilot - Standard View</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-lowest": "#0d0e12",
+                    "primary-container": "#4b8eff",
+                    "error-container": "#93000a",
+                    "surface-container-high": "#292a2e",
+                    "surface-variant": "#343539",
+                    "surface-dim": "#121317",
+                    "on-secondary-fixed": "#1b1b1c",
+                    "tertiary-fixed-dim": "#c8c6c8",
+                    "on-secondary": "#303030",
+                    "surface": "#121317",
+                    "on-error": "#690005",
+                    "tertiary": "#c8c6c8",
+                    "surface-container-highest": "#343539",
+                    "on-primary": "#002e69",
+                    "primary": "#adc6ff",
+                    "secondary-fixed-dim": "#c8c6c5",
+                    "on-tertiary-fixed": "#1b1b1d",
+                    "on-tertiary-fixed-variant": "#474649",
+                    "primary-fixed-dim": "#adc6ff",
+                    "on-primary-container": "#00285c",
+                    "inverse-on-surface": "#2f3034",
+                    "inverse-surface": "#e3e2e7",
+                    "surface-container-low": "#1a1b1f",
+                    "outline-variant": "#414755",
+                    "on-secondary-fixed-variant": "#474746",
+                    "tertiary-fixed": "#e4e2e4",
+                    "secondary": "#c8c6c5",
+                    "on-surface-variant": "#c1c6d7",
+                    "surface-bright": "#38393d",
+                    "error": "#ffb4ab",
+                    "primary-fixed": "#d8e2ff",
+                    "on-tertiary": "#303032",
+                    "secondary-fixed": "#e5e2e1",
+                    "on-tertiary-container": "#29292b",
+                    "surface-container": "#1e1f23",
+                    "surface-tint": "#adc6ff",
+                    "outline": "#8b90a0",
+                    "inverse-primary": "#005bc1",
+                    "tertiary-container": "#919092",
+                    "on-secondary-container": "#b7b5b4",
+                    "on-error-container": "#ffdad6",
+                    "background": "#121317",
+                    "on-primary-fixed-variant": "#004493",
+                    "secondary-container": "#474746",
+                    "on-primary-fixed": "#001a41",
+                    "on-surface": "#e3e2e7",
+                    "on-background": "#e3e2e7"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "xl": "32px",
+                    "gutter": "20px",
+                    "lg": "24px",
+                    "margin": "24px",
+                    "xs": "8px",
+                    "base": "4px",
+                    "sm": "12px",
+                    "md": "16px"
+            },
+            "fontFamily": {
+                    "label-sm": ["Inter"],
+                    "body-md": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "headline-sm": ["Inter"],
+                    "display-lg": ["Inter"],
+                    "label-md": ["Inter"],
+                    "headline-md": ["Inter"]
+            },
+            "fontSize": {
+                    "label-sm": ["11px", {"lineHeight": "13px", "letterSpacing": "0.06em", "fontWeight": "600"}],
+                    "body-md": ["15px", {"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"}],
+                    "body-lg": ["17px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"}],
+                    "headline-sm": ["20px", {"lineHeight": "25px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "display-lg": ["34px", {"lineHeight": "41px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "label-md": ["13px", {"lineHeight": "18px", "letterSpacing": "0.01em", "fontWeight": "500"}],
+                    "headline-md": ["24px", {"lineHeight": "30px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { background-color: #121317; color: #e3e2e7; }
+        .glass-panel {
+            background: rgba(41, 42, 46, 0.4);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body-md text-body-md antialiased overflow-hidden h-screen flex flex-col">
+<!-- Top Navigation Anchor -->
+<header class="bg-zinc-900/70 backdrop-blur-xl border-b border-white/10 fixed top-0 w-full z-50 flex justify-between items-center px-6 h-14">
+<div class="flex items-center gap-3">
+<span class="text-lg font-bold text-white tracking-tight">Meeting Pilot</span>
+<div class="h-4 w-px bg-white/10 mx-2"></div>
+<div class="flex items-center gap-1.5 px-3 py-1 bg-surface-container-low rounded-full border border-white/5">
+<span class="w-2 h-2 rounded-full bg-primary-container animate-pulse"></span>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Live Recording</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 text-zinc-400 font-label-md text-label-md">
+<span class="material-symbols-outlined text-[18px]">folder_open</span>
+<span>Saving to: /Work/Meetings/2024</span>
+</div>
+<div class="w-8 h-8 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-zinc-400 text-[20px]">settings</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 mt-14 mb-20 overflow-hidden flex flex-col px-6 pt-6 gap-6">
+<!-- View Toggle & Status Bar -->
+<div class="flex justify-between items-center shrink-0">
+<div class="bg-zinc-900/50 p-1 rounded-xl border border-white/5 flex gap-1">
+<button class="px-6 py-1.5 bg-primary-container text-on-primary-container rounded-lg font-label-md text-label-md transition-all active:scale-95">Standard</button>
+<button class="px-6 py-1.5 text-zinc-500 hover:text-zinc-200 rounded-lg font-label-md text-label-md transition-all">Minimal</button>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex flex-col items-end">
+<span class="font-label-sm text-label-sm text-zinc-500 uppercase">Duration</span>
+<span class="font-display-lg text-display-lg font-mono text-white">00:24:41</span>
+</div>
+</div>
+</div>
+<!-- Dashboard Layout -->
+<div class="flex-1 grid grid-cols-12 gap-gutter min-h-0">
+<!-- Transcription Area (Primary) -->
+<div class="col-span-12 lg:col-span-8 flex flex-col gap-4 min-h-0">
+<div class="flex-1 glass-panel rounded-xl flex flex-col overflow-hidden">
+<div class="p-4 border-b border-white/5 flex justify-between items-center shrink-0">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Live Transcript</h2>
+<div class="flex gap-2">
+<button class="p-2 hover:bg-white/5 rounded-lg text-zinc-400"><span class="material-symbols-outlined">search</span></button>
+<button class="p-2 hover:bg-white/5 rounded-lg text-zinc-400"><span class="material-symbols-outlined">more_vert</span></button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto p-6 space-y-6">
+<!-- Transcription Block -->
+<div class="flex gap-4 group">
+<div class="w-12 shrink-0 font-label-sm text-label-sm text-zinc-600 pt-1.5">10:04</div>
+<div class="flex-1 space-y-2">
+<div class="flex items-center gap-2">
+<span class="font-label-md text-label-md text-primary-container">Alex Rivers</span>
+<span class="w-1 h-1 rounded-full bg-zinc-700"></span>
+<span class="font-label-sm text-label-sm text-zinc-500">Host</span>
+</div>
+<p class="text-body-lg text-zinc-300 leading-relaxed">
+                                    Thanks for joining everyone. Today we're reviewing the Q3 product roadmap and specifically the new integration layer. We need to ensure the latency remains under 200ms for the real-time processing components.
+                                </p>
+</div>
+</div>
+<!-- Transcription Block -->
+<div class="flex gap-4 group">
+<div class="w-12 shrink-0 font-label-sm text-label-sm text-zinc-600 pt-1.5">10:05</div>
+<div class="flex-1 space-y-2">
+<div class="flex items-center gap-2">
+<span class="font-label-md text-label-md text-zinc-300">Sarah Chen</span>
+</div>
+<p class="text-body-lg text-zinc-300 leading-relaxed">
+                                    I've been looking at the preliminary benchmarks, and we're currently seeing around 240ms. Most of that overhead is coming from the authentication handshake. We might need to look at caching tokens more aggressively at the edge.
+                                </p>
+</div>
+</div>
+<!-- Transcription Block (Active) -->
+<div class="flex gap-4 group bg-white/5 -mx-4 px-4 py-4 rounded-xl border border-white/5">
+<div class="w-12 shrink-0 font-label-sm text-label-sm text-zinc-500 pt-1.5">10:06</div>
+<div class="flex-1 space-y-2">
+<div class="flex items-center gap-2">
+<span class="font-label-md text-label-md text-primary-container">Alex Rivers</span>
+</div>
+<p class="text-body-lg text-white leading-relaxed">
+                                    That's a good point, Sarah. If we move the token validation to the edge, how does that affect our security posture for enterprise clients?
+                                </p>
+</div>
+</div>
+<!-- Transcription Block (In Progress) -->
+<div class="flex gap-4 group">
+<div class="w-12 shrink-0 font-label-sm text-label-sm text-zinc-700 pt-1.5">10:07</div>
+<div class="flex-1 space-y-2">
+<div class="flex items-center gap-2">
+<span class="font-label-md text-label-md text-zinc-500 italic">Processing...</span>
+</div>
+<div class="h-4 w-2/3 bg-white/5 rounded animate-pulse"></div>
+<div class="h-4 w-1/2 bg-white/5 rounded animate-pulse"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Side Panels (Secondary) -->
+<div class="hidden lg:flex lg:col-span-4 flex-col gap-gutter min-h-0">
+<!-- Summary Placeholder -->
+<div class="flex-1 glass-panel rounded-xl flex flex-col p-6 overflow-hidden">
+<div class="flex items-center gap-3 mb-6">
+<span class="material-symbols-outlined text-primary-container">auto_awesome</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">AI Insights</h3>
+</div>
+<div class="space-y-6">
+<div>
+<span class="font-label-sm text-label-sm text-zinc-500 uppercase mb-2 block">Key Topics</span>
+<div class="flex flex-wrap gap-2">
+<span class="px-2.5 py-1 bg-surface-container-high rounded-lg text-label-md text-label-md text-zinc-300 border border-white/5">Latency Reduction</span>
+<span class="px-2.5 py-1 bg-surface-container-high rounded-lg text-label-md text-label-md text-zinc-300 border border-white/5">Q3 Roadmap</span>
+<span class="px-2.5 py-1 bg-surface-container-high rounded-lg text-label-md text-label-md text-zinc-300 border border-white/5">Edge Security</span>
+</div>
+</div>
+<div class="space-y-4">
+<span class="font-label-sm text-label-sm text-zinc-500 uppercase block">Action Items</span>
+<div class="flex gap-3 items-start group">
+<div class="w-5 h-5 rounded border border-zinc-700 mt-0.5 flex-shrink-0 group-hover:border-primary-container transition-colors"></div>
+<p class="text-body-md text-zinc-400">Sarah to provide updated edge benchmark reports by Friday.</p>
+</div>
+<div class="flex gap-3 items-start group opacity-50">
+<div class="w-5 h-5 rounded border border-zinc-700 mt-0.5 flex-shrink-0"></div>
+<p class="text-body-md text-zinc-400">Security audit for token caching architecture (Pending).</p>
+</div>
+</div>
+<div class="pt-4 border-t border-white/5">
+<p class="text-label-md text-label-md text-zinc-500 leading-relaxed italic">
+                                Summary is being generated in real-time as the meeting progresses. Full summary available once recording ends.
+                            </p>
+</div>
+</div>
+</div>
+<!-- Audio Visualization Card -->
+<div class="h-40 glass-panel rounded-xl p-6 flex flex-col justify-between">
+<div class="flex justify-between items-start">
+<span class="font-label-sm text-label-sm text-zinc-500 uppercase">Input Level</span>
+<span class="font-label-md text-label-md text-primary-container">-4.2 dB</span>
+</div>
+<div class="flex items-end gap-[3px] h-16">
+<div class="flex-1 bg-primary-container rounded-t-sm h-1/2"></div>
+<div class="flex-1 bg-primary-container rounded-t-sm h-2/3"></div>
+<div class="flex-1 bg-primary-container rounded-t-sm h-1/3"></div>
+<div class="flex-1 bg-primary-container rounded-t-sm h-3/4"></div>
+<div class="flex-1 bg-primary-container rounded-t-sm h-full"></div>
+<div class="flex-1 bg-primary-container rounded-t-sm h-2/3"></div>
+<div class="flex-1 bg-zinc-700 rounded-t-sm h-1/4"></div>
+<div class="flex-1 bg-zinc-700 rounded-t-sm h-1/5"></div>
+<div class="flex-1 bg-zinc-700 rounded-t-sm h-1/3"></div>
+<div class="flex-1 bg-zinc-700 rounded-t-sm h-1/4"></div>
+<div class="flex-1 bg-zinc-700 rounded-t-sm h-1/6"></div>
+<div class="flex-1 bg-zinc-700 rounded-t-sm h-1/3"></div>
+<div class="flex-1 bg-zinc-700 rounded-t-sm h-1/2"></div>
+<div class="flex-1 bg-zinc-700 rounded-t-sm h-2/3"></div>
+<div class="flex-1 bg-zinc-700 rounded-t-sm h-1/3"></div>
+<div class="flex-1 bg-zinc-700 rounded-t-sm h-1/4"></div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Navigation Shell -->
+<nav class="bg-zinc-900/80 backdrop-blur-2xl border-t border-white/5 fixed bottom-0 left-0 w-full h-20 flex justify-around items-center px-4 pb-4 z-50">
+<div class="flex flex-col items-center justify-center text-blue-500 bg-blue-500/10 rounded-xl px-4 py-2 active:scale-90 duration-150 transition-all cursor-pointer">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">mic</span>
+<span class="text-[10px] font-medium tracking-wide uppercase mt-1">Record</span>
+</div>
+<div class="flex flex-col items-center justify-center text-zinc-500 hover:text-zinc-200 transition-all active:scale-90 duration-150 cursor-pointer">
+<span class="material-symbols-outlined">history</span>
+<span class="text-[10px] font-medium tracking-wide uppercase mt-1">History</span>
+</div>
+<!-- Center Floating Action Area -->
+<div class="flex gap-4 mx-8">
+<button class="bg-error-container text-white px-8 py-3 rounded-full font-label-md text-label-md flex items-center gap-2 shadow-lg shadow-black/40 hover:brightness-110 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">stop</span>
+                Stop Recording
+            </button>
+</div>
+<div class="flex flex-col items-center justify-center text-zinc-500 hover:text-zinc-200 transition-all active:scale-90 duration-150 cursor-pointer">
+<span class="material-symbols-outlined">description</span>
+<span class="text-[10px] font-medium tracking-wide uppercase mt-1">Notes</span>
+</div>
+<div class="flex flex-col items-center justify-center text-zinc-500 hover:text-zinc-200 transition-all active:scale-90 duration-150 cursor-pointer">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-[10px] font-medium tracking-wide uppercase mt-1">Settings</span>
+</div>
+</nav>
+</body></html>
