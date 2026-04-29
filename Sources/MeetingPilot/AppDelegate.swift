@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.set(DisplayMode.full.rawValue, forKey: "MeetingPilot.displayMode")
+        loadAppIcon()
         setupMenuBar()
         showPermissionsWindow()
 
@@ -64,6 +65,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 win.setContentSize(NSSize(width: 760, height: 680))
                 win.center()
             }
+        }
+    }
+
+    private func loadAppIcon() {
+        let execURL = Bundle.main.executableURL ?? URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
+        let resourcesURL = execURL
+            .deletingLastPathComponent() // MacOS/
+            .deletingLastPathComponent() // Contents/
+            .appendingPathComponent("Contents/Resources/AppIcon.icns")
+        if let icon = NSImage(contentsOf: resourcesURL) {
+            NSApplication.shared.applicationIconImage = icon
+            return
+        }
+        if let bundleIcon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: bundleIcon) {
+            NSApplication.shared.applicationIconImage = icon
         }
     }
 

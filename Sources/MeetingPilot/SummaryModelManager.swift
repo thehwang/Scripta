@@ -39,7 +39,7 @@ final class SummaryModelManager: ObservableObject {
 
     static let availableModels: [LLMModelInfo] = [
         LLMModelInfo(
-            id: "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
+1            id: "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
             name: "Qwen 2.5 1.5B (Recommended)",
             sizeDescription: "~1 GB",
             description: "Best balance of speed and quality for summaries",
