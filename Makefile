@@ -30,6 +30,10 @@ run: setup-cert
 		echo "Binary changed — copying and signing ..."; \
 		cp "$$SRC_BIN" "$$DST_BIN"; \
 		cp "Sources/MeetingPilot/Info.plist" "$$CONTENTS_DIR/Info.plist"; \
+		mkdir -p "$$CONTENTS_DIR/Resources"; \
+		if [ -f "Resources/AppIcon.icns" ]; then \
+			cp "Resources/AppIcon.icns" "$$CONTENTS_DIR/Resources/AppIcon.icns"; \
+		fi; \
 		MLX_METALLIB="$$(python3 -c 'import mlx; print(mlx.__path__[0])' 2>/dev/null)/lib/mlx.metallib"; \
 		if [ -f "$$MLX_METALLIB" ]; then \
 			cp "$$MLX_METALLIB" "$$MACOS_DIR/mlx.metallib"; \

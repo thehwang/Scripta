@@ -8,14 +8,14 @@ import SwiftUI
 private enum Theme {
     static let bg = Color(red: 0.071, green: 0.075, blue: 0.090)
     static let surface = Color(red: 0.118, green: 0.122, blue: 0.137)
-    static let surfaceHigh = Color(red: 0.161, green: 0.165, blue: 0.180)
-    static let border = Color.white.opacity(0.06)
-    static let borderLight = Color.white.opacity(0.10)
-    static let accent = Color(red: 0.294, green: 0.557, blue: 1.0)
-    static let accentSoft = Color(red: 0.678, green: 0.776, blue: 1.0)
-    static let textPrimary = Color(red: 0.890, green: 0.886, blue: 0.906)
-    static let textSecondary = Color(red: 0.545, green: 0.565, blue: 0.627)
-    static let textMuted = Color(red: 0.373, green: 0.384, blue: 0.420)
+    static let surfaceHigh = Color(red: 0.180, green: 0.185, blue: 0.205)
+    static let border = Color.white.opacity(0.10)
+    static let borderLight = Color.white.opacity(0.15)
+    static let accent = Color(red: 0.35, green: 0.60, blue: 1.0)
+    static let accentSoft = Color(red: 0.72, green: 0.82, blue: 1.0)
+    static let textPrimary = Color(red: 0.94, green: 0.94, blue: 0.96)
+    static let textSecondary = Color(red: 0.65, green: 0.67, blue: 0.72)
+    static let textMuted = Color(red: 0.48, green: 0.50, blue: 0.55)
     static let red = Color(red: 0.576, green: 0.0, blue: 0.039)
     static let redBright = Color(red: 1.0, green: 0.706, blue: 0.671)
 }
@@ -769,11 +769,14 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
 
+    @State private var languageModelMissing = false
+
     private var languagePicker: some View {
         Menu {
             ForEach(MeetingRecorder.supportedRecognitionLanguages, id: \.code) { lang in
                 Button {
                     recorder.recognitionLanguage = lang.code
+                    checkLanguageAvailability()
                 } label: {
                     HStack {
                         Text(lang.name)
@@ -783,26 +786,53 @@ struct ContentView: View {
                     }
                 }
             }
+
+            Divider()
+
+            Button("Download language models...") {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
+            }
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: "globe")
                     .font(.system(size: 10))
                 Text(currentLanguageName)
                     .font(.system(size: 10, weight: .medium))
+                if languageModelMissing {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.yellow)
+                }
             }
-            .foregroundStyle(Theme.textSecondary)
+            .foregroundStyle(languageModelMissing ? .yellow : Theme.textSecondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Color.white.opacity(0.06), in: Capsule())
+            .background(Color.white.opacity(0.10), in: Capsule())
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(recorder.isRecording)
+        .onAppear { checkLanguageAvailability() }
     }
 
     private var currentLanguageName: String {
         MeetingRecorder.supportedRecognitionLanguages
             .first { $0.code == recorder.recognitionLanguage }?.name ?? recorder.recognitionLanguage
+    }
+
+    private func checkLanguageAvailability() {
+        let code = recorder.recognitionLanguage
+        DispatchQueue.global(qos: .utility).async {
+            let available: Bool
+            if let recognizer = SFSpeechRecognizer(locale: Locale(identifier: code)) {
+                available = recognizer.isAvailable && recognizer.supportsOnDeviceRecognition
+            } else {
+                available = false
+            }
+            DispatchQueue.main.async {
+                languageModelMissing = !available
+            }
+        }
     }
 
     private var translationControls: some View {
@@ -892,7 +922,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 3)
         .padding(.vertical, 1)
-        .background(Color.white.opacity(0.06), in: Capsule())
+        .background(Color.white.opacity(0.10), in: Capsule())
     }
 
     // MARK: - Summary Generation
