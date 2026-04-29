@@ -122,9 +122,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
             mplog("startRecording FAILED: \(error.localizedDescription)")
             state = .idle
             lastError = error.localizedDescription
-            if statusMessage.isEmpty || statusMessage.contains("Recording") {
-                statusMessage = "Failed to start. Check permissions in System Settings → Privacy & Security."
-            }
+            statusMessage = error.localizedDescription
         }
     }
 
@@ -246,14 +244,20 @@ final class MeetingRecorder: NSObject, ObservableObject {
     // MARK: Apple Speech Pipeline
 
     private func beginAppleSpeechPipeline() async throws {
-        guard let speechRecognizer, speechRecognizer.isAvailable else {
+        guard let speechRecognizer else {
             throw NSError(domain: "MeetingPilot", code: 3,
-                          userInfo: [NSLocalizedDescriptionKey: "Speech recognizer is not available."])
+                          userInfo: [NSLocalizedDescriptionKey: "Speech recognizer could not be created for '\(recognitionLanguage)'."])
+        }
+        if !speechRecognizer.isAvailable || !speechRecognizer.supportsOnDeviceRecognition {
+            let langName = Self.supportedRecognitionLanguages.first { $0.code == recognitionLanguage }?.name ?? recognitionLanguage
+            throw NSError(domain: "MeetingPilot", code: 4,
+                          userInfo: [NSLocalizedDescriptionKey: "\(langName) speech model not downloaded. Go to System Settings → Keyboard → Dictation → Languages to download it."])
         }
 
         let micReq = SFSpeechAudioBufferRecognitionRequest()
         micReq.shouldReportPartialResults = true
         micReq.requiresOnDeviceRecognition = true
+        micReq.addsPunctuation = true
         micRequest = micReq
 
         try startAudioEngineWithRetry(request: micReq)
@@ -265,6 +269,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         let sysReq = SFSpeechAudioBufferRecognitionRequest()
         sysReq.shouldReportPartialResults = true
         sysReq.requiresOnDeviceRecognition = true
+        sysReq.addsPunctuation = true
         systemRequest = sysReq
 
         systemAudioCapture.onAudioSampleBuffer = { [weak self] sampleBuffer in
@@ -397,8 +402,14 @@ final class MeetingRecorder: NSObject, ObservableObject {
             }
 
             if let error {
-                mplog("[\(speaker)] error: \(error.localizedDescription)")
+                let desc = error.localizedDescription
+                mplog("[\(speaker)] error: \(desc)")
                 let produced = isMic ? self.micTaskProducedResult : self.systemTaskProducedResult
+
+                if desc.contains("access assets") || desc.contains("not available") {
+                    let langName = Self.supportedRecognitionLanguages.first { $0.code == self.recognitionLanguage }?.name ?? self.recognitionLanguage
+                    self.statusMessage = "\(langName) model downloading or unavailable. Go to Settings → Keyboard → Dictation to download."
+                }
 
                 if self.state == .recording && produced {
                     mplog("[\(speaker)] task had results → restart")
@@ -450,13 +461,20 @@ final class MeetingRecorder: NSObject, ObservableObject {
         if let t0 = activeStart {
             let elapsed = now.timeIntervalSince(t0)
             let hasPunct = uncommitted.unicodeScalars.contains { c in
-                c == "." || c == "!" || c == "?"
+                c == "." || c == "!" || c == "?" ||
+                c == "\u{3002}" || c == "\u{FF01}" || c == "\u{FF1F}" || // 。！？
+                c == "\u{FF0C}" || c == "\u{3001}"                       // ，、
             }
-            if elapsed > Self.commitTimeSec && uncommitted.count > 30 {
+            let isCJK = uncommitted.unicodeScalars.contains { $0.value >= 0x4E00 && $0.value <= 0x9FFF }
+            let punctThreshold = isCJK ? 15 : Self.commitCharsWithPunct
+            let lengthThreshold = isCJK ? 60 : Self.commitChars
+            let timeThreshold = isCJK ? 12 : Int(Self.commitTimeSec)
+
+            if elapsed > TimeInterval(timeThreshold) && uncommitted.count > (isCJK ? 8 : 30) {
                 shouldCommit = true
-            } else if hasPunct && uncommitted.count > Self.commitCharsWithPunct {
+            } else if hasPunct && uncommitted.count > punctThreshold {
                 shouldCommit = true
-            } else if uncommitted.count > Self.commitChars {
+            } else if uncommitted.count > lengthThreshold {
                 shouldCommit = true
             }
         }
@@ -502,6 +520,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         let newReq = SFSpeechAudioBufferRecognitionRequest()
         newReq.shouldReportPartialResults = true
         newReq.requiresOnDeviceRecognition = true
+        newReq.addsPunctuation = true
 
         let isMic = speaker == "You"
         setCommitted(0, isMic: isMic)

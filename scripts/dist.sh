@@ -20,6 +20,11 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 
 cp "$BIN_PATH/$APP" "$APP_BUNDLE/Contents/MacOS/$APP"
 cp "Sources/MeetingPilot/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+mkdir -p "$APP_BUNDLE/Contents/Resources"
+if [ -f "Resources/AppIcon.icns" ]; then
+    cp "Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+    echo "  Included AppIcon.icns"
+fi
 
 MLX_METALLIB="$(python3 -c 'import mlx; print(mlx.__path__[0])' 2>/dev/null)/lib/mlx.metallib" || true
 if [ -f "$MLX_METALLIB" ]; then
