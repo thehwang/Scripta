@@ -1,6 +1,7 @@
 import CoreGraphics
 import CoreMedia
 import Foundation
+import MeetingPilotCore
 import ScreenCaptureKit
 
 final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
@@ -36,13 +37,14 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
     }
 
     func start() async throws {
-        // Go straight to SCShareableContent. Do NOT gate on
-        // CGPreflightScreenCaptureAccess — it returns false for self-signed
-        // apps even when Screen Recording has been granted.
         let content: SCShareableContent
         do {
             content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            mplog("SystemAudioCapture: SCShareableContent OK — \(content.displays.count) displays, \(content.applications.count) apps")
         } catch {
+            mplog("SystemAudioCapture: SCShareableContent FAILED — \(error)")
+            // On macOS 15, a fresh Xcode build may need the user to manually
+            // add the app in System Settings → Screen Recording, then restart.
             throw CaptureError.permissionDenied
         }
 
@@ -70,7 +72,9 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
 
         do {
             try await newStream.startCapture()
+            mplog("SystemAudioCapture: stream capture started")
         } catch {
+            mplog("SystemAudioCapture: startCapture FAILED — \(error)")
             throw CaptureError.permissionDenied
         }
 

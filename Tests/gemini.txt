@@ -1,0 +1,27 @@
+Meeting Summary
+The meeting was a planning session for the upcoming Program Increment (PI). The main focus was on prioritizing work, identifying dependencies, and introducing a significant change to the team's deployment process.
+
+Key topics discussed include:
+
+Feature Prioritization: Two features related to an "age filter" have been re-prioritized as dependencies for the unified platform launch.
+
+Migration & Evaluation: The migration of the "health audience" is the top priority. The team needs to sequence the evaluation of four vendor partners, which involves loading their data into a publishing zone for analysis.
+
+Dependencies: The team has several dependencies on other teams, including two potentially duplicate tickets from the SSP team that require clarification.
+
+New Deployment Process: A new, five-stage deployment pipeline (Dev -> QA -> UAT -> Stage -> Prod) is being implemented. This is a major change from the previous process and will require the team to adjust their workflow and estimates. The goal is to move towards a more automated and reliable deployment system.
+
+Improved Planning: There is a strong push to complete all requirements gathering and discovery work before PI planning week, so that planning week can be dedicated solely to scheduling and estimation.
+
+Action Items
+Confirm Prioritization: Check the backlog tracker to confirm the new, higher priority of the two "age filter" features.
+
+Sequence Vendor Evaluations: Talk to Mike to determine the order in which the vendor evaluation tickets should be tackled.
+
+Clarify SSP Dependencies: Meet with Alyssa to understand the scope of the two SSP dependency tickets, which appear to be duplicates.
+
+Adopt New Deployment Pipeline: The team must begin using the new deployment process (Dev -> QA -> UAT -> Stage -> Prod) for all work in this PI.
+
+Update Estimation Process: When estimating tasks, factor in additional time for coordination and data population required by the new multi-environment setup.
+
+Clean Up Project Board: The project board needs to be reviewed and cleaned up.

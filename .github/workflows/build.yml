@@ -1,0 +1,116 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            xcode: "15.4"
+            platform_suffix: macos14
+          - os: macos-15
+            xcode: "16.0"
+            platform_suffix: macos15
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_${{ matrix.xcode }}.app
+
+      - name: Install Python MLX (for mlx.metallib)
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install mlx
+
+      - name: Resolve dependencies
+        run: swift package resolve
+
+      - name: Build release
+        run: swift build -c release
+
+      - name: Package app
+        run: |
+          APP="MeetingPilot"
+          BIN_PATH="$(swift build -c release --show-bin-path)"
+          DIST_DIR="build/dist"
+          APP_BUNDLE="$DIST_DIR/$APP.app"
+
+          mkdir -p "$APP_BUNDLE/Contents/MacOS"
+          cp "$BIN_PATH/$APP" "$APP_BUNDLE/Contents/MacOS/$APP"
+          cp "Sources/MeetingPilot/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+
+          MLX_METALLIB="$(python3 -c 'import mlx; print(mlx.__path__[0])')/lib/mlx.metallib" || true
+          if [ -f "$MLX_METALLIB" ]; then
+            cp "$MLX_METALLIB" "$APP_BUNDLE/Contents/MacOS/mlx.metallib"
+            echo "Included mlx.metallib"
+          else
+            echo "WARNING: mlx.metallib not found, AI summary disabled"
+          fi
+
+          xattr -cr "$APP_BUNDLE"
+          /usr/bin/codesign --force --sign - \
+            --entitlements MeetingPilot-deploy.entitlements \
+            --deep "$APP_BUNDLE"
+
+      - name: Create DMG
+        run: |
+          hdiutil create -volname "MeetingPilot" \
+            -srcfolder build/dist \
+            -ov -format UDZO \
+            "build/MeetingPilot-${{ matrix.platform_suffix }}.dmg"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeetingPilot-${{ matrix.platform_suffix }}
+          path: build/MeetingPilot-${{ matrix.platform_suffix }}.dmg
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download macOS 14 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: MeetingPilot-macos14
+          path: artifacts/
+
+      - name: Download macOS 15 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: MeetingPilot-macos15
+          path: artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/MeetingPilot-macos14.dmg
+            artifacts/MeetingPilot-macos15.dmg
+          body: |
+            ## Installation
+
+            | File | macOS Version | Translation |
+            |------|---------------|-------------|
+            | `MeetingPilot-macos14.dmg` | macOS 14+ | No |
+            | `MeetingPilot-macos15.dmg` | macOS 15+ | Yes |
+
+            ### Install steps:
+            1. Open the DMG
+            2. Drag `MeetingPilot.app` to `/Applications/`
+            3. Run: `xattr -cr /Applications/MeetingPilot.app`
+            4. Right-click → Open (first time only)
+            5. Grant Microphone + Screen Recording permissions

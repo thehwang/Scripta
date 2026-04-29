@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreGraphics
+import ScreenCaptureKit
 import Speech
 import SwiftUI
 
@@ -9,13 +10,14 @@ struct PermissionsView: View {
     @State private var micStatus: PermStatus = .unknown
     @State private var screenStatus: PermStatus = .unknown
     @State private var speechStatus: PermStatus = .unknown
+    @State private var dictationStatus: PermStatus = .unknown
 
     private enum PermStatus {
         case unknown, granted, denied
     }
 
-    private var canContinue: Bool {
-        screenStatus == .granted
+    private var allGranted: Bool {
+        screenStatus == .granted && micStatus == .granted && speechStatus == .granted && dictationStatus == .granted
     }
 
     private let accent = Color(red: 0.294, green: 0.557, blue: 1.0)
@@ -36,7 +38,7 @@ struct PermissionsView: View {
             }
             .padding(.top, 24)
         }
-        .frame(minWidth: 700, maxWidth: 780, minHeight: 440, maxHeight: 520)
+        .frame(minWidth: 820, maxWidth: 920, minHeight: 440, maxHeight: 520)
         .onAppear { checkAllPermissions() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             checkAllPermissions()
@@ -100,6 +102,14 @@ struct PermissionsView: View {
                 isRequired: true,
                 status: speechStatus,
                 action: requestSpeechRecognition
+            )
+            permissionCard(
+                icon: "keyboard",
+                title: "Dictation",
+                description: "On-device speech model required. Enable in Keyboard settings.",
+                isRequired: true,
+                status: dictationStatus,
+                action: openDictationSettings
             )
         }
         .padding(.horizontal, 24)
@@ -189,24 +199,25 @@ struct PermissionsView: View {
             Divider().background(Color.white.opacity(0.06))
 
             Button(action: onContinue) {
-                Text("Continue")
+                Text(allGranted ? "Continue" : "Continue Anyway")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(canContinue ? .white : dimGray)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
                     .background(
-                        canContinue ? accent : Color.white.opacity(0.05),
+                        allGranted ? accent : Color.white.opacity(0.12),
                         in: RoundedRectangle(cornerRadius: 10)
                     )
             }
             .buttonStyle(.plain)
-            .disabled(!canContinue)
             .padding(.horizontal, 24)
 
-            if !canContinue {
-                Text("Please enable all required permissions to proceed.")
+            if !allGranted {
+                Text("Some permissions may not be detected. You can still proceed — grant them in System Settings if needed.")
                     .font(.system(size: 10))
                     .foregroundStyle(subtitleGray)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
             }
 
             HStack(spacing: 28) {
@@ -236,10 +247,34 @@ struct PermissionsView: View {
         let mic = AVCaptureDevice.authorizationStatus(for: .audio)
         micStatus = mic == .authorized ? .granted : .denied
 
-        screenStatus = CGPreflightScreenCaptureAccess() ? .granted : .denied
+        // CGPreflightScreenCaptureAccess is unreliable on macOS 15.
+        // Try the actual API to determine if permission is granted.
+        Task {
+            let granted = await checkScreenRecordingViaContent()
+            await MainActor.run { screenStatus = granted ? .granted : .denied }
+        }
 
         let speech = SFSpeechRecognizer.authorizationStatus()
         speechStatus = speech == .authorized ? .granted : .denied
+
+        dictationStatus = isDictationEnabled() ? .granted : .denied
+    }
+
+    private func checkScreenRecordingViaContent() async -> Bool {
+        if CGPreflightScreenCaptureAccess() { return true }
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            return !content.displays.isEmpty
+        } catch {
+            return false
+        }
+    }
+
+    private func isDictationEnabled() -> Bool {
+        if let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US")) {
+            return recognizer.isAvailable
+        }
+        return false
     }
 
     private func requestMicrophone() {
@@ -256,12 +291,18 @@ struct PermissionsView: View {
     }
 
     private func requestScreenRecording() {
-        if !CGPreflightScreenCaptureAccess() {
-            CGRequestScreenCaptureAccess()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                if CGPreflightScreenCaptureAccess() {
-                    screenStatus = .granted
-                } else {
+        Task {
+            let alreadyGranted = await checkScreenRecordingViaContent()
+            if alreadyGranted {
+                await MainActor.run { screenStatus = .granted }
+                return
+            }
+            await MainActor.run { CGRequestScreenCaptureAccess() }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            let granted = await checkScreenRecordingViaContent()
+            await MainActor.run {
+                screenStatus = granted ? .granted : .denied
+                if !granted {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
                 }
             }
@@ -279,5 +320,9 @@ struct PermissionsView: View {
         } else {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition")!)
         }
+    }
+
+    private func openDictationSettings() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.keyboard")!)
     }
 }

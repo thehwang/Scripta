@@ -39,11 +39,38 @@ final class SummaryModelManager: ObservableObject {
 
     static let availableModels: [LLMModelInfo] = [
         LLMModelInfo(
+            id: "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
+            name: "Qwen 2.5 1.5B (Recommended)",
+            sizeDescription: "~1 GB",
+            description: "Best balance of speed and quality for summaries",
+            isDefault: true,
+            overrideTokenizer: nil,
+            extraEOSTokens: ["<|im_end|>"]
+        ),
+        LLMModelInfo(
+            id: "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+            name: "Qwen 2.5 0.5B",
+            sizeDescription: "~400 MB",
+            description: "Smallest & fastest, good for short meetings",
+            isDefault: false,
+            overrideTokenizer: nil,
+            extraEOSTokens: ["<|im_end|>"]
+        ),
+        LLMModelInfo(
+            id: "mlx-community/Qwen2.5-3B-Instruct-4bit",
+            name: "Qwen 2.5 3B",
+            sizeDescription: "~2 GB",
+            description: "Higher quality, needs more memory",
+            isDefault: false,
+            overrideTokenizer: nil,
+            extraEOSTokens: ["<|im_end|>"]
+        ),
+        LLMModelInfo(
             id: "mlx-community/Llama-3.2-1B-Instruct-4bit",
             name: "Llama 3.2 1B",
             sizeDescription: "~700 MB",
-            description: "Fast, strong English performance",
-            isDefault: true,
+            description: "Strong English performance",
+            isDefault: false,
             overrideTokenizer: nil,
             extraEOSTokens: []
         ),
@@ -51,18 +78,9 @@ final class SummaryModelManager: ObservableObject {
             id: "mlx-community/Llama-3.2-3B-Instruct-4bit",
             name: "Llama 3.2 3B",
             sizeDescription: "~2 GB",
-            description: "Higher quality, needs more memory",
+            description: "High quality English, needs more memory",
             isDefault: false,
             overrideTokenizer: nil,
-            extraEOSTokens: []
-        ),
-        LLMModelInfo(
-            id: "mlx-community/Qwen1.5-0.5B-Chat-4bit",
-            name: "Qwen 1.5 0.5B",
-            sizeDescription: "~350 MB",
-            description: "Smallest & fastest, multilingual",
-            isDefault: false,
-            overrideTokenizer: "PreTrainedTokenizer",
             extraEOSTokens: []
         ),
         LLMModelInfo(
