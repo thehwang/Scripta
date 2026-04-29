@@ -20,6 +20,17 @@ private enum Theme {
     static let redBright = Color(red: 1.0, green: 0.706, blue: 0.671)
 }
 
+// MARK: - Display Mode
+
+enum DisplayMode: String {
+    case full
+    case minimal
+}
+
+extension Notification.Name {
+    static let displayModeChanged = Notification.Name("MeetingPilot.displayModeChanged")
+}
+
 // MARK: - Main View
 
 struct ContentView: View {
@@ -29,14 +40,50 @@ struct ContentView: View {
     var onOpenModelSettings: (() -> Void)?
 
     @StateObject private var summaryService = SummaryService()
-    @State private var translatedEntryCount = 0
     @State private var hasMicPermission = false
     @State private var now = Date()
     @State private var showSummary = false
+    @AppStorage("MeetingPilot.displayMode") private var displayMode: String = DisplayMode.full.rawValue
+    @AppStorage("MeetingPilot.fontScale") private var fontScale: Double = 1.0
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
+    private var isMinimal: Bool { displayMode == DisplayMode.minimal.rawValue }
+
+    private let fontScaleMin: Double = 0.7
+    private let fontScaleMax: Double = 1.8
+    private let fontScaleStep: Double = 0.1
+
+    private func scaled(_ baseSize: CGFloat) -> CGFloat {
+        baseSize * CGFloat(fontScale)
+    }
+
     var body: some View {
+        Group {
+            if isMinimal {
+                minimalBody
+            } else {
+                fullBody
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onChange(of: recorder.entries.count) { translateCommittedEntries() }
+        .onChange(of: recorder.state) {
+            if recorder.state == .completed && summaryModelManager.isReady {
+                generateSummary()
+            }
+        }
+        .onAppear { refreshPermissionStatus() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshPermissionStatus()
+        }
+        .onReceive(timer) { now = $0; translateCommittedEntries() }
+        .modifier(TranslationTaskModifier(translationService: translationService))
+    }
+
+    // MARK: - Full Mode Body
+
+    private var fullBody: some View {
         ZStack {
             Theme.bg.ignoresSafeArea()
 
@@ -66,22 +113,153 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 680)
-        .preferredColorScheme(.dark)
-        .onChange(of: recorder.entries.count) { translateNewEntries() }
-        .onChange(of: recorder.state) {
-            if recorder.state == .completed && summaryModelManager.isReady {
-                generateSummary()
+    }
+
+    // MARK: - Minimal Mode Body (Live Captions Style)
+
+    private var lastEntryText: String {
+        recorder.entries.last?.text ?? ""
+    }
+
+    private var minimalBody: some View {
+        VStack(spacing: 0) {
+            minimalCaptionArea
+            minimalControlBar
+        }
+        .background(Color.black.opacity(0.82))
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 0.5))
+    }
+
+    private var minimalCaptionArea: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Spacer(minLength: 0)
+            let recentEntries = Array(recorder.entries.suffix(4))
+            if recentEntries.isEmpty {
+                Text(recorder.isRecording ? "Listening..." : "Press ● to start")
+                    .font(.system(size: scaled(15), weight: .medium))
+                    .foregroundStyle(Theme.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 12)
+            } else {
+                ForEach(Array(recentEntries.enumerated()), id: \.element.id) { idx, entry in
+                    minimalEntryRow(entry, isLatest: idx == recentEntries.count - 1)
+                }
             }
         }
-        .onAppear { refreshPermissionStatus() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshPermissionStatus()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        if let last = recorder.entries.last {
+            withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(last.id, anchor: .bottom) }
         }
-        .onReceive(timer) { now = $0 }
+    }
+
+    private func minimalEntryRow(_ entry: TranscriptEntry, isLatest: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(entry.speaker)
+                .font(.system(size: scaled(12), weight: .bold))
+                .foregroundStyle(speakerColor(entry.speaker))
+                .frame(width: scaled(52), alignment: .trailing)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.text)
+                    .font(.system(size: scaled(15), weight: isLatest ? .medium : .regular))
+                    .foregroundStyle(isLatest ? .white : Color.white.opacity(0.65))
+                    .lineSpacing(scaled(2))
+
+                if let translated = entry.translatedText, shouldShowTranslation {
+                    Text(translated)
+                        .font(.system(size: scaled(14)))
+                        .foregroundStyle(Theme.textSecondary.opacity(0.85))
+                }
+            }
+        }
+        .padding(.vertical, 3)
+        .opacity(isLatest ? 1.0 : 0.7)
+    }
+
+    private var minimalControlBar: some View {
+        HStack(spacing: 12) {
+            if recorder.isRecording {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 6, height: 6)
+                        .modifier(PulseAnimation())
+                    Text(formattedDuration)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.red.opacity(0.9))
+                }
+            }
+
+            fontSizeControlsCompact
+
+            Spacer()
+
+            if recorder.isRecording {
+                Button {
+                    recorder.stopRecording()
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white)
+                        .frame(width: 26, height: 26)
+                        .background(Color.red.opacity(0.8), in: Circle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    Task { @MainActor in await recorder.startRecording() }
+                } label: {
+                    Image(systemName: "record.circle")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+                .disabled(recorder.state == .transcribing)
+            }
+
+            Button {
+                switchToMode(.full)
+            } label: {
+                Image(systemName: "rectangle.expand.vertical")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textMuted)
+                    .frame(width: 26, height: 26)
+                    .background(Color.white.opacity(0.06), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Switch to full view")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.3))
     }
 
     private func refreshPermissionStatus() {
         hasMicPermission = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
+
+    private func switchToMode(_ mode: DisplayMode) {
+        displayMode = mode.rawValue
+        NotificationCenter.default.post(name: .displayModeChanged, object: mode)
+    }
+
+    private func increaseFontScale() {
+        fontScale = min(fontScaleMax, fontScale + fontScaleStep)
+    }
+
+    private func decreaseFontScale() {
+        fontScale = max(fontScaleMin, fontScale - fontScaleStep)
+    }
+
+    private func resetFontScale() {
+        fontScale = 1.0
     }
 
     // MARK: - Top Bar
@@ -119,6 +297,22 @@ struct ContentView: View {
                 .frame(maxWidth: 280)
                 .padding(.trailing, 8)
             }
+
+            fontSizeControls
+                .padding(.trailing, 4)
+
+            Button {
+                switchToMode(.minimal)
+            } label: {
+                Image(systemName: "rectangle.compress.vertical")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textMuted)
+                    .frame(width: 28, height: 28)
+                    .background(Color.white.opacity(0.04), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Switch to minimal captions view")
+            .padding(.trailing, 4)
 
             aiModelBadge
         }
@@ -304,9 +498,10 @@ struct ContentView: View {
                     .padding(.vertical, 8)
                 }
                 .onChange(of: recorder.entries.count) {
-                    if let last = recorder.entries.last {
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last.id, anchor: .bottom) }
-                    }
+                    scrollToBottom(proxy)
+                }
+                .onChange(of: lastEntryText) {
+                    scrollToBottom(proxy)
                 }
             }
         }
@@ -331,36 +526,36 @@ struct ContentView: View {
     private func entryRow(_ entry: TranscriptEntry, isLast: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
             Text(timeString(entry.timestamp))
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.system(size: scaled(11), weight: .medium, design: .monospaced))
                 .foregroundStyle(Theme.textMuted)
-                .frame(width: 50, alignment: .leading)
+                .frame(width: scaled(50), alignment: .leading)
                 .padding(.top, 3)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.speaker)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: scaled(12), weight: .semibold))
                     .foregroundStyle(speakerColor(entry.speaker))
 
                 Text(entry.text)
-                    .font(.system(size: 14, weight: .regular))
+                    .font(.system(size: scaled(14), weight: .regular))
                     .foregroundStyle(isLast ? .white : Theme.textPrimary)
                     .textSelection(.enabled)
-                    .lineSpacing(3)
+                    .lineSpacing(scaled(3))
 
                 if let translated = entry.translatedText, shouldShowTranslation {
                     Text(translated)
-                        .font(.system(size: 13))
+                        .font(.system(size: scaled(14)))
                         .foregroundStyle(Theme.textSecondary)
                         .textSelection(.enabled)
-                        .lineSpacing(2)
+                        .lineSpacing(scaled(2))
                 }
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.vertical, scaled(12))
         .background(isLast && recorder.isRecording ? Theme.accent.opacity(0.04) : .clear)
         .overlay(alignment: .bottom) {
-            if !isLast { Divider().background(Theme.border).padding(.leading, 70) }
+            if !isLast { Divider().background(Theme.border).padding(.leading, scaled(70)) }
         }
     }
 
@@ -418,17 +613,17 @@ struct ContentView: View {
 
             if summaryService.streamingText.isEmpty && !summaryService.isGenerating {
                 Text("Summary will appear after recording completes.")
-                    .font(.system(size: 12))
+                    .font(.system(size: scaled(12)))
                     .foregroundStyle(Theme.textMuted)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 16)
             } else {
                 ScrollView {
                     Text(summaryService.streamingText)
-                        .font(.system(size: 13))
+                        .font(.system(size: scaled(13)))
                         .foregroundStyle(Theme.textPrimary)
                         .textSelection(.enabled)
-                        .lineSpacing(4)
+                        .lineSpacing(scaled(4))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
@@ -490,6 +685,8 @@ struct ContentView: View {
                 .controlSize(.mini)
                 .disabled(recorder.isRecording)
             }
+
+            languagePicker
 
             translationControls
 
@@ -572,6 +769,42 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
 
+    private var languagePicker: some View {
+        Menu {
+            ForEach(MeetingRecorder.supportedRecognitionLanguages, id: \.code) { lang in
+                Button {
+                    recorder.recognitionLanguage = lang.code
+                } label: {
+                    HStack {
+                        Text(lang.name)
+                        if recorder.recognitionLanguage == lang.code {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "globe")
+                    .font(.system(size: 10))
+                Text(currentLanguageName)
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .foregroundStyle(Theme.textSecondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.white.opacity(0.06), in: Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(recorder.isRecording)
+    }
+
+    private var currentLanguageName: String {
+        MeetingRecorder.supportedRecognitionLanguages
+            .first { $0.code == recorder.recognitionLanguage }?.name ?? recorder.recognitionLanguage
+    }
+
     private var translationControls: some View {
         HStack(spacing: 8) {
             if translationService.isAvailable {
@@ -601,6 +834,67 @@ struct ContentView: View {
         (translationService.displayMode == .bilingual || translationService.displayMode == .translated)
     }
 
+    // MARK: - Font Size Controls
+
+    private var fontSizeControls: some View {
+        HStack(spacing: 2) {
+            Button { decreaseFontScale() } label: {
+                Text("A")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.textMuted)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .disabled(fontScale <= fontScaleMin)
+            .help("Decrease font size (⌘-)")
+
+            Text("\(Int(fontScale * 100))%")
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundStyle(Theme.textMuted)
+                .frame(width: 34)
+                .onTapGesture { resetFontScale() }
+                .help("Reset to default (⌘0)")
+
+            Button { increaseFontScale() } label: {
+                Text("A")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Theme.textMuted)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .disabled(fontScale >= fontScaleMax)
+            .help("Increase font size (⌘+)")
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(Color.white.opacity(0.04), in: Capsule())
+    }
+
+    private var fontSizeControlsCompact: some View {
+        HStack(spacing: 1) {
+            Button { decreaseFontScale() } label: {
+                Text("A")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Theme.textMuted)
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .disabled(fontScale <= fontScaleMin)
+
+            Button { increaseFontScale() } label: {
+                Text("A")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.textMuted)
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .disabled(fontScale >= fontScaleMax)
+        }
+        .padding(.horizontal, 3)
+        .padding(.vertical, 1)
+        .background(Color.white.opacity(0.06), in: Capsule())
+    }
+
     // MARK: - Summary Generation
 
     private func generateSummary() {
@@ -622,20 +916,64 @@ struct ContentView: View {
 
     // MARK: - Translation
 
-    private func translateNewEntries() {
+    private func translateCommittedEntries() {
         guard translationService.isEnabled, translationService.isAvailable else { return }
         let entries = recorder.entries
-        let startIdx = translatedEntryCount
-        guard startIdx < entries.count else { return }
-        translatedEntryCount = entries.count
+        guard !entries.isEmpty else { return }
+
+        var indicesToTranslate: [Int] = []
+        for i in 0..<entries.count {
+            let e = entries[i]
+            if e.isCommitted {
+                // Needs translation if never translated or text changed since last translation
+                let needsTranslation = e.translatedText == nil
+                    || (e.translatedSourceText != nil && e.translatedSourceText != e.text)
+                if needsTranslation {
+                    indicesToTranslate.append(i)
+                }
+            }
+        }
+
+        // Also translate the latest active entry if it's long enough
+        // to provide real-time feedback while speaking
+        if let lastIdx = entries.indices.last,
+           !entries[lastIdx].isCommitted,
+           entries[lastIdx].translatedText == nil,
+           entries[lastIdx].text.count > 60 {
+            indicesToTranslate.append(lastIdx)
+        }
+
+        guard !indicesToTranslate.isEmpty else { return }
 
         Task {
-            for i in startIdx..<entries.count {
-                let text = entries[i].text
-                if let translated = await translationService.translate(text) {
+            for idx in indicesToTranslate {
+                guard idx < self.recorder.entries.count else { continue }
+                let text = self.recorder.entries[idx].text
+
+                // Build context: include up to 2 previous committed entries
+                var contextLines: [String] = []
+                for prev in max(0, idx - 2)..<idx {
+                    if prev < self.recorder.entries.count {
+                        contextLines.append(self.recorder.entries[prev].text)
+                    }
+                }
+
+                let translated: String?
+                if contextLines.isEmpty {
+                    translated = await translationService.translate(text)
+                } else {
+                    let contextBlock = contextLines.joined(separator: " ")
+                    translated = await translationService.translateWithContext(
+                        text: text,
+                        context: contextBlock
+                    )
+                }
+
+                if let translated {
                     await MainActor.run {
-                        if i < self.recorder.entries.count {
-                            self.recorder.entries[i].translatedText = translated
+                        if idx < self.recorder.entries.count {
+                            self.recorder.entries[idx].translatedText = translated
+                            self.recorder.entries[idx].translatedSourceText = text
                         }
                     }
                 }
@@ -673,3 +1011,55 @@ private struct PulseAnimation: ViewModifier {
             .onAppear { pulse = true }
     }
 }
+
+// MARK: - Translation Task Modifier
+
+#if compiler(>=6.0) && canImport(Translation)
+import Translation
+
+@available(macOS 15.0, *)
+private struct TranslationTaskModifierImpl: ViewModifier {
+    @ObservedObject var translationService: TranslationService
+    @State private var config: TranslationSession.Configuration?
+
+    func body(content: Content) -> some View {
+        content
+            .translationTask(config) { session in
+                translationService.setSession(session)
+            }
+            .onAppear { updateConfig() }
+            .onChange(of: translationService.isEnabled) { updateConfig() }
+            .onChange(of: translationService.configurationNeedsUpdate) {
+                if translationService.configurationNeedsUpdate {
+                    updateConfig()
+                    translationService.configurationNeedsUpdate = false
+                }
+            }
+    }
+
+    private func updateConfig() {
+        guard translationService.isEnabled, translationService.isAvailable else {
+            config = nil
+            return
+        }
+        config = translationService.makeConfiguration()
+    }
+}
+
+private struct TranslationTaskModifier: ViewModifier {
+    @ObservedObject var translationService: TranslationService
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.modifier(TranslationTaskModifierImpl(translationService: translationService))
+        } else {
+            content
+        }
+    }
+}
+#else
+private struct TranslationTaskModifier: ViewModifier {
+    @ObservedObject var translationService: TranslationService
+    func body(content: Content) -> some View { content }
+}
+#endif

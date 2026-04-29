@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import CoreMedia
 import Foundation
@@ -27,8 +28,27 @@ final class MeetingRecorder: NSObject, ObservableObject {
         entries.map { "[\($0.speaker)] \($0.text)" }.joined(separator: "\n")
     }
 
+    @Published var recognitionLanguage: String = UserDefaults.standard.string(forKey: "MeetingPilot.recognitionLanguage") ?? "en-US" {
+        didSet { UserDefaults.standard.set(recognitionLanguage, forKey: "MeetingPilot.recognitionLanguage") }
+    }
+
+    static let supportedRecognitionLanguages: [(code: String, name: String)] = [
+        ("en-US", "English (US)"),
+        ("en-GB", "English (UK)"),
+        ("zh-Hans", "中文 (简体)"),
+        ("zh-Hant", "中文 (繁體)"),
+        ("ja-JP", "日本語"),
+        ("ko-KR", "한국어"),
+        ("fr-FR", "Français"),
+        ("de-DE", "Deutsch"),
+        ("es-ES", "Español"),
+        ("pt-BR", "Português"),
+        ("it-IT", "Italiano"),
+        ("ru-RU", "Русский"),
+    ]
+
     private let audioEngine = AVAudioEngine()
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var speechRecognizer: SFSpeechRecognizer?
     private let systemAudioCapture = SystemAudioCapture()
     private let systemAppendQueue = DispatchQueue(label: "meetingpilot.system-audio-append")
     private let audioWriteQueue = DispatchQueue(label: "meetingpilot.audio-write")
@@ -74,6 +94,8 @@ final class MeetingRecorder: NSObject, ObservableObject {
         guard state != .recording else { return }
 
         clearPreviousResult()
+        speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: recognitionLanguage))
+        mplog("startRecording: using language = \(recognitionLanguage)")
 
         do {
             mplog("startRecording: requesting permissions...")
@@ -90,12 +112,19 @@ final class MeetingRecorder: NSObject, ObservableObject {
             mplog("startRecording: pipeline started, state = recording")
         } catch let error as SystemAudioCapture.CaptureError where error == .permissionDenied {
             state = .idle
-            statusMessage = "Screen Recording permission required. Grant it in System Settings, then click Start again."
+            statusMessage = "Screen Recording permission required. Open System Settings → Privacy & Security → Screen Recording → add Meeting Pilot."
             lastError = error.localizedDescription
             mplog("startRecording: screen recording permission denied")
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
         } catch {
             mplog("startRecording FAILED: \(error.localizedDescription)")
-            setFailure(error.localizedDescription)
+            state = .idle
+            lastError = error.localizedDescription
+            if statusMessage.isEmpty || statusMessage.contains("Recording") {
+                statusMessage = "Failed to start. Check permissions in System Settings → Privacy & Security."
+            }
         }
     }
 
@@ -146,16 +175,71 @@ final class MeetingRecorder: NSObject, ObservableObject {
     }
 
     private func ensurePermissions() async throws {
-        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-        guard micStatus == .authorized else {
-            throw NSError(domain: "MeetingPilot", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "Microphone permission not granted. Please enable it in the Permissions screen."])
+        mplog("ensurePermissions: checking mic...")
+        var micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        mplog("ensurePermissions: mic status = \(micStatus.rawValue)")
+
+        if micStatus == .notDetermined {
+            mplog("ensurePermissions: requesting mic access...")
+            let granted = await withTaskTimeout(seconds: 15) {
+                await AVCaptureDevice.requestAccess(for: .audio)
+            } ?? false
+            micStatus = granted ? .authorized : AVCaptureDevice.authorizationStatus(for: .audio)
+            mplog("ensurePermissions: mic after request = \(micStatus.rawValue), granted=\(granted)")
         }
 
-        let speechStatus = SFSpeechRecognizer.authorizationStatus()
-        guard speechStatus == .authorized else {
+        if micStatus == .denied || micStatus == .restricted {
+            mplog("ensurePermissions: mic denied, opening Settings...")
+            await MainActor.run {
+                lastError = "Microphone access denied."
+                statusMessage = "Open System Settings → Privacy & Security → Microphone → toggle ON for Meeting Pilot"
+            }
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                await MainActor.run { NSWorkspace.shared.open(url) }
+            }
+            throw NSError(domain: "MeetingPilot", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Microphone denied. Open System Settings → Privacy & Security → Microphone and enable Meeting Pilot."])
+        }
+
+        mplog("ensurePermissions: checking speech...")
+        var speechStatus = SFSpeechRecognizer.authorizationStatus()
+        mplog("ensurePermissions: speech status = \(speechStatus.rawValue)")
+
+        if speechStatus == .notDetermined {
+            mplog("ensurePermissions: requesting speech access...")
+            speechStatus = await withTaskTimeout(seconds: 8) {
+                await withCheckedContinuation { cont in
+                    SFSpeechRecognizer.requestAuthorization { s in cont.resume(returning: s) }
+                }
+            } ?? .denied
+            mplog("ensurePermissions: speech request result = \(speechStatus.rawValue)")
+        }
+
+        if speechStatus == .denied || speechStatus == .restricted {
+            mplog("ensurePermissions: speech denied, opening System Settings...")
+            await MainActor.run {
+                lastError = "Speech Recognition access denied."
+                statusMessage = "Open System Settings → Privacy & Security → Speech Recognition → toggle ON for Meeting Pilot"
+            }
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition") {
+                await MainActor.run { NSWorkspace.shared.open(url) }
+            }
             throw NSError(domain: "MeetingPilot", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Speech recognition not granted. Please enable it in the Permissions screen."])
+                          userInfo: [NSLocalizedDescriptionKey: "Speech Recognition not authorized. Open System Settings → Privacy & Security → Speech Recognition, find Meeting Pilot, and toggle it ON."])
+        }
+        mplog("ensurePermissions: all OK (mic=notDetermined will be handled by engine)")
+    }
+
+    private func withTaskTimeout<T>(seconds: TimeInterval, operation: @escaping () async -> T) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { await operation() }
+            group.addTask { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)); return nil }
+            if let first = await group.next() ?? nil {
+                group.cancelAll()
+                return first
+            }
+            group.cancelAll()
+            return nil
         }
     }
 
@@ -172,16 +256,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         micReq.requiresOnDeviceRecognition = true
         micRequest = micReq
 
-        let inputNode = audioEngine.inputNode
-        let micFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: micFormat) { [weak self] buffer, _ in
-            self?.micRequest?.append(buffer)
-            self?.writeMicAudio(buffer)
-        }
-
-        audioEngine.prepare()
-        try audioEngine.start()
+        try startAudioEngineWithRetry(request: micReq)
 
         micTask = speechRecognizer.recognitionTask(with: micReq) { [weak self] result, error in
             self?.handleRecognitionResult(result: result, error: error, speaker: "You")
@@ -208,6 +283,97 @@ final class MeetingRecorder: NSObject, ObservableObject {
             self?.handleRecognitionResult(result: result, error: error, speaker: "Remote")
         }
         mplog("Apple Speech pipeline: both recognition tasks created")
+    }
+
+    private func startAudioEngineWithRetry(request: SFSpeechAudioBufferRecognitionRequest) throws {
+        audioEngine.stop()
+        audioEngine.reset()
+
+        let inputNode = audioEngine.inputNode
+        inputNode.removeTap(onBus: 0)
+
+        let hwFormat = inputNode.inputFormat(forBus: 0)
+        mplog("Mic hardware format: rate=\(hwFormat.sampleRate) ch=\(hwFormat.channelCount) bits=\(hwFormat.streamDescription.pointee.mBitsPerChannel)")
+
+        let hwValid = hwFormat.sampleRate > 0 && hwFormat.channelCount > 0
+
+        if !hwValid {
+            mplog("Hardware format invalid (rate=0/ch=0) — microphone not accessible to this process")
+
+            inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
+            audioEngine.reset()
+
+            mplog("Trying nil-default strategy as last resort...")
+            do {
+                inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
+                    self?.micRequest?.append(buffer)
+                    self?.writeMicAudio(buffer)
+                }
+                audioEngine.prepare()
+                try audioEngine.start()
+                mplog("Audio engine started with nil-default")
+                return
+            } catch {
+                mplog("nil-default failed: \(error.localizedDescription)")
+            }
+
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                DispatchQueue.main.async { NSWorkspace.shared.open(url) }
+            }
+            throw NSError(
+                domain: "MeetingPilot", code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "Microphone not accessible. On macOS 15, try: open the app via double-click (not Terminal), or build from Xcode. Go to System Settings → Privacy & Security → Microphone to check."]
+            )
+        }
+
+        let strategies: [(String, AVAudioFormat?)] = buildTapStrategies(hwFormat: hwFormat)
+
+        var lastError: Error?
+        for (label, tapFormat) in strategies {
+            inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
+            audioEngine.reset()
+
+            mplog("Trying tap strategy: \(label) → format=\(tapFormat?.description ?? "nil")")
+            do {
+                inputNode.installTap(onBus: 0, bufferSize: 4096, format: tapFormat) { [weak self] buffer, _ in
+                    self?.micRequest?.append(buffer)
+                    self?.writeMicAudio(buffer)
+                }
+                audioEngine.prepare()
+                try audioEngine.start()
+                mplog("Audio engine started with strategy: \(label)")
+                return
+            } catch {
+                mplog("Strategy '\(label)' failed: \(error.localizedDescription)")
+                lastError = error
+                inputNode.removeTap(onBus: 0)
+            }
+        }
+
+        throw lastError ?? NSError(
+            domain: "MeetingPilot", code: 4,
+            userInfo: [NSLocalizedDescriptionKey: "Could not start audio engine. Make sure no other app is using the microphone."]
+        )
+    }
+
+    private func buildTapStrategies(hwFormat: AVAudioFormat) -> [(String, AVAudioFormat?)] {
+        var strategies: [(String, AVAudioFormat?)] = []
+
+        strategies.append(("hardware-native", hwFormat))
+
+        if hwFormat.channelCount > 1 || hwFormat.commonFormat != .pcmFormatFloat32 {
+            if let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                        sampleRate: hwFormat.sampleRate,
+                                        channels: 1, interleaved: false) {
+                strategies.append(("mono-float32-hwrate", mono))
+            }
+        }
+
+        strategies.append(("nil-default", nil))
+
+        return strategies
     }
 
     // MARK: Recognition result handling
@@ -298,8 +464,9 @@ final class MeetingRecorder: NSObject, ObservableObject {
         if shouldCommit {
             if let idx = activeIdx, idx < entries.count {
                 entries[idx].text = uncommitted
+                entries[idx].isCommitted = true
             } else {
-                entries.append(TranscriptEntry(speaker: speaker, text: uncommitted))
+                entries.append(TranscriptEntry(speaker: speaker, text: uncommitted, isCommitted: true))
             }
             setCommitted(fullText.count, isMic: isMic)
             clearActive(isMic: isMic)
@@ -316,6 +483,10 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
     private func freezeActiveEntry(speaker: String) {
         let isMic = speaker == "You"
+        let activeIdx = isMic ? activeMicIdx : activeSystemIdx
+        if let idx = activeIdx, idx < entries.count {
+            entries[idx].isCommitted = true
+        }
         clearActive(isMic: isMic)
         setCommitted(0, isMic: isMic)
     }
@@ -575,11 +746,17 @@ final class MeetingRecorder: NSObject, ObservableObject {
             endedAt: recordingEndedAt ?? Date(),
             entries: entries
         )
+        let translatedContent = ScriptExporter.makeTranslatedContent(
+            startedAt: recordingStartedAt,
+            endedAt: recordingEndedAt ?? Date(),
+            entries: entries
+        )
         finalScript = entries.map { "[\($0.speaker)] \($0.text)" }.joined(separator: "\n")
 
         do {
             let sessionDir = try ScriptExporter.exportSession(
                 content: content,
+                translatedContent: translatedContent,
                 micAudioURL: micAudioURL,
                 systemAudioURL: systemAudioURL,
                 startedAt: recordingStartedAt

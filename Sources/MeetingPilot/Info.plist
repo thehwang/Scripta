@@ -24,5 +24,7 @@
     <string>Meeting Pilot needs microphone access to capture your voice during meetings.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Meeting Pilot needs speech recognition to generate real-time meeting transcripts.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Meeting Pilot needs screen recording access to capture system audio from remote meeting participants.</string>
 </dict>
 </plist>

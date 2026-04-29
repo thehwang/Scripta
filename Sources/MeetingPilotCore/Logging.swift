@@ -11,6 +11,7 @@ private let logFile: FileHandle? = {
 public func mplog(_ msg: String) {
     let ts = ISO8601DateFormatter().string(from: Date())
     let line = "[\(ts)] \(msg)\n"
+    fputs(line, stderr)
     if let data = line.data(using: .utf8) {
         logFile?.seekToEndOfFile()
         logFile?.write(data)

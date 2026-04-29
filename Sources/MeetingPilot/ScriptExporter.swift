@@ -7,6 +7,7 @@ enum ScriptExporter {
     /// and optionally copies audio files into it.
     static func exportSession(
         content: String,
+        translatedContent: String? = nil,
         micAudioURL: URL?,
         systemAudioURL: URL?,
         startedAt: Date?
@@ -25,6 +26,11 @@ enum ScriptExporter {
 
         let transcriptURL = sessionDir.appendingPathComponent("transcript.md")
         try content.write(to: transcriptURL, atomically: true, encoding: .utf8)
+
+        if let translatedContent {
+            let translatedURL = sessionDir.appendingPathComponent("transcript-bilingual.md")
+            try translatedContent.write(to: translatedURL, atomically: true, encoding: .utf8)
+        }
 
         if let src = micAudioURL, fm.fileExists(atPath: src.path) {
             let dst = sessionDir.appendingPathComponent("audio-mic.m4a")
@@ -67,9 +73,38 @@ enum ScriptExporter {
             for entry in entries {
                 let ts = timeFmt.string(from: entry.timestamp)
                 lines.append("[\(ts)] \(entry.speaker): \(entry.text)")
-                if let translated = entry.translatedText {
-                    lines.append("    → \(translated)")
-                }
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    /// Generate a bilingual transcript with translations inline.
+    static func makeTranslatedContent(startedAt: Date?, endedAt: Date?, entries: [TranscriptEntry]) -> String? {
+        let hasTranslations = entries.contains { $0.translatedText != nil }
+        guard hasTranslations else { return nil }
+
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "HH:mm:ss"
+
+        let startText = startedAt.map { dateFmt.string(from: $0) } ?? "unknown"
+        let endText = endedAt.map { dateFmt.string(from: $0) } ?? "unknown"
+
+        var lines: [String] = [
+            "Meeting Pilot — Bilingual Transcript",
+            "=====================================",
+            "Start: \(startText)",
+            "End: \(endText)",
+            "",
+        ]
+
+        for entry in entries {
+            let ts = timeFmt.string(from: entry.timestamp)
+            lines.append("[\(ts)] \(entry.speaker): \(entry.text)")
+            if let translated = entry.translatedText {
+                lines.append("    → \(translated)")
             }
         }
 

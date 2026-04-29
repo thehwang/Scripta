@@ -8,10 +8,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recorder = MeetingRecorder()
     private let summaryModelManager = SummaryModelManager()
     private let translationService = TranslationService()
+    private var savedFullFrame: NSRect?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UserDefaults.standard.set(DisplayMode.full.rawValue, forKey: "MeetingPilot.displayMode")
         setupMenuBar()
         showPermissionsWindow()
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleDisplayModeChanged(_:)),
+            name: .displayModeChanged, object: nil
+        )
+    }
+
+    @objc private func handleDisplayModeChanged(_ note: Notification) {
+        guard let mode = note.object as? DisplayMode, let win = window else { return }
+        switch mode {
+        case .minimal:
+            savedFullFrame = win.frame
+            win.styleMask = [.titled, .resizable, .fullSizeContentView]
+            win.standardWindowButton(.closeButton)?.isHidden = true
+            win.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            win.standardWindowButton(.zoomButton)?.isHidden = true
+            win.level = .floating
+            win.titlebarAppearsTransparent = true
+            win.titleVisibility = .hidden
+            win.isMovableByWindowBackground = true
+            win.backgroundColor = .clear
+            win.isOpaque = false
+            win.minSize = NSSize(width: 320, height: 80)
+            win.maxSize = NSSize(width: 1200, height: 400)
+            let size = NSSize(width: 560, height: 120)
+            let screen = win.screen ?? NSScreen.main ?? NSScreen.screens[0]
+            let origin = NSPoint(
+                x: screen.visibleFrame.midX - size.width / 2,
+                y: screen.visibleFrame.minY + 24
+            )
+            win.setFrame(NSRect(origin: origin, size: size), display: true, animate: true)
+        case .full:
+            win.standardWindowButton(.closeButton)?.isHidden = false
+            win.standardWindowButton(.miniaturizeButton)?.isHidden = false
+            win.standardWindowButton(.zoomButton)?.isHidden = false
+            win.level = .normal
+            win.isMovableByWindowBackground = false
+            win.titlebarAppearsTransparent = false
+            win.titleVisibility = .visible
+            win.backgroundColor = nil
+            win.isOpaque = true
+            win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            win.minSize = NSSize(width: 760, height: 680)
+            win.maxSize = NSSize(width: .max, height: .max)
+            if let saved = savedFullFrame {
+                win.setFrame(saved, display: true, animate: true)
+            } else {
+                win.setContentSize(NSSize(width: 760, height: 680))
+                win.center()
+            }
+        }
     }
 
     private func setupMenuBar() {
@@ -25,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Open Meeting Pilot", action: #selector(openMainWindow), keyEquivalent: "o")
         menu.addItem(withTitle: "Start/Stop Recording", action: #selector(toggleRecording), keyEquivalent: "r")
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Toggle Minimal/Full View", action: #selector(toggleDisplayMode), keyEquivalent: "m")
         menu.addItem(withTitle: "AI Model Settings...", action: #selector(showSetup), keyEquivalent: ",")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Meeting Pilot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -100,6 +154,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showSetup() {
         showSetupWindow()
+    }
+
+    @objc private func toggleDisplayMode() {
+        let current = UserDefaults.standard.string(forKey: "MeetingPilot.displayMode") ?? DisplayMode.full.rawValue
+        let next: DisplayMode = (current == DisplayMode.minimal.rawValue) ? .full : .minimal
+        UserDefaults.standard.set(next.rawValue, forKey: "MeetingPilot.displayMode")
+        NotificationCenter.default.post(name: .displayModeChanged, object: next)
     }
 
     @objc private func toggleRecording() {

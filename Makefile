@@ -77,6 +77,41 @@ install: setup-cert
 	echo "First launch: open /Applications/$(APP).app"; \
 	echo "Grant Microphone + Screen Recording when prompted."
 
+deploy: setup-cert
+	@set -e; \
+	echo "Building release binary for deployment ..."; \
+	swift build -c release 2>&1; \
+	BIN_PATH="$$(swift build -c release --show-bin-path)"; \
+	DEPLOY_DIR="build/deploy"; \
+	APP_DIR="$$DEPLOY_DIR/$(APP).app/Contents"; \
+	MACOS_DIR="$$APP_DIR/MacOS"; \
+	rm -rf "$$DEPLOY_DIR"; \
+	mkdir -p "$$MACOS_DIR"; \
+	cp "$$BIN_PATH/$(APP)" "$$MACOS_DIR/$(APP)"; \
+	cp "Sources/MeetingPilot/Info.plist" "$$APP_DIR/Info.plist"; \
+	MLX_METALLIB="$$(python3 -c 'import mlx; print(mlx.__path__[0])' 2>/dev/null)/lib/mlx.metallib"; \
+	if [ -f "$$MLX_METALLIB" ]; then \
+		cp "$$MLX_METALLIB" "$$MACOS_DIR/mlx.metallib"; \
+		echo "Included mlx.metallib for AI summary support."; \
+	fi; \
+	xattr -cr "$$DEPLOY_DIR/$(APP).app"; \
+	/usr/bin/codesign --force --sign "$(CERT_NAME)" \
+		--entitlements MeetingPilot-deploy.entitlements \
+		--deep "$$DEPLOY_DIR/$(APP).app"; \
+	echo ""; \
+	echo "=== Deploy package ready ==="; \
+	echo "App: $$DEPLOY_DIR/$(APP).app"; \
+	echo "Signed with MINIMAL entitlements (audio-input only)."; \
+	echo ""; \
+	echo "To install on target Mac:"; \
+	echo "  1. Copy $(APP).app to /Applications/"; \
+	echo "  2. Run: xattr -cr /Applications/$(APP).app"; \
+	echo "  3. Open from /Applications/ (not /tmp or ~/Downloads)"; \
+	echo "  4. Grant permissions when prompted"; \
+	echo ""; \
+	cd "$$DEPLOY_DIR" && zip -r ../$(APP)-deploy.zip $(APP).app; \
+	echo "Zip: build/$(APP)-deploy.zip ($$(du -h ../$(APP)-deploy.zip | cut -f1))"
+
 test:
 	swift test
 
