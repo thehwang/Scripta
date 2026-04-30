@@ -49,7 +49,9 @@ jobs:
             --deep "$APP_BUNDLE"
 
       - name: Create ZIP
-        run: cd build/dist && zip -r ../../MeetingPilot-macos15.zip MeetingPilot.app
+        run: |
+          cp scripts/install.sh build/dist/install.sh
+          cd build/dist && zip -r ../../MeetingPilot-macos15.zip MeetingPilot.app install.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -97,7 +99,9 @@ jobs:
             --deep "$APP_BUNDLE"
 
       - name: Create ZIP
-        run: cd build/dist && zip -r ../../MeetingPilot-macos14.zip MeetingPilot.app
+        run: |
+          cp scripts/install.sh build/dist/install.sh
+          cd build/dist && zip -r ../../MeetingPilot-macos14.zip MeetingPilot.app install.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -136,9 +140,10 @@ jobs:
             | `MeetingPilot-macos15.zip` | macOS 15+ | Yes (Apple Translation) |
             | `MeetingPilot-macos14.zip` | macOS 14+ | No |
 
-            ### Install steps:
-            1. Unzip the file
-            2. Run: `xattr -cr MeetingPilot.app`
-            3. Move to `/Applications/`
-            4. Right-click → Open (first time only)
-            5. Grant Microphone + Screen Recording + Speech Recognition permissions
+            ### Install (one command):
+            ```bash
+            unzip MeetingPilot-macos15.zip && bash install.sh
+            ```
+
+            The install script handles everything: copy to /Applications, clear quarantine,
+            reset permissions, and launch the app. Grant Microphone + Screen Recording when prompted.
