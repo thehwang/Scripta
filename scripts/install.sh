@@ -90,6 +90,85 @@ killall Dock 2>/dev/null || true
 ok "Installed to $APP_PATH"
 echo ""
 
+# ── Ollama (AI Summary) ──────────────────────────────────────────────
+
+DEFAULT_MODEL="qwen2.5:3b"
+
+install_ollama() {
+    if command -v ollama >/dev/null 2>&1; then
+        ok "Ollama already installed ($(ollama --version 2>/dev/null || echo 'unknown version'))"
+    else
+        info "Installing Ollama for AI meeting summaries..."
+        if command -v brew >/dev/null 2>&1; then
+            brew install ollama
+        else
+            info "Homebrew not found, installing Homebrew first..."
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
+            brew install ollama
+        fi
+
+        if command -v ollama >/dev/null 2>&1; then
+            ok "Ollama installed successfully"
+        else
+            warn "Ollama installation failed. You can install manually later:"
+            echo "  brew install ollama"
+            echo "  brew services start ollama"
+            echo "  ollama pull $DEFAULT_MODEL"
+        fi
+    fi
+}
+
+start_ollama_service() {
+    if brew services list 2>/dev/null | grep -q "ollama.*started"; then
+        ok "Ollama service already running"
+    else
+        info "Setting Ollama to start automatically..."
+        brew services start ollama
+        sleep 2
+        if curl -s http://localhost:11434/ >/dev/null 2>&1; then
+            ok "Ollama service started and running"
+        else
+            info "Waiting for Ollama to start..."
+            sleep 3
+            if curl -s http://localhost:11434/ >/dev/null 2>&1; then
+                ok "Ollama service is running"
+            else
+                warn "Ollama may need a moment to start. It will be ready when you open the app."
+            fi
+        fi
+    fi
+}
+
+pull_default_model() {
+    if ollama list 2>/dev/null | grep -q "$DEFAULT_MODEL"; then
+        ok "Model $DEFAULT_MODEL already downloaded"
+    else
+        info "Downloading AI model ($DEFAULT_MODEL, ~1.9 GB)..."
+        info "This may take a few minutes depending on your internet speed."
+        if ollama pull "$DEFAULT_MODEL"; then
+            ok "Model $DEFAULT_MODEL ready"
+        else
+            warn "Model download failed. You can download later in the app or run:"
+            echo "  ollama pull $DEFAULT_MODEL"
+        fi
+    fi
+}
+
+if command -v ollama >/dev/null 2>&1 || command -v brew >/dev/null 2>&1; then
+    install_ollama
+    if command -v ollama >/dev/null 2>&1; then
+        start_ollama_service
+        pull_default_model
+    fi
+else
+    warn "Homebrew not found. To enable AI summaries, install Ollama manually:"
+    echo "  1. Install Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+    echo "  2. brew install ollama && brew services start ollama"
+    echo "  3. ollama pull $DEFAULT_MODEL"
+    echo ""
+fi
+
 # macOS version specific notes
 if [ "$MACOS_MAJOR" -ge 15 ]; then
     warn "macOS 15 requires manual permission grants:"
@@ -115,5 +194,11 @@ echo "║                                      ║"
 echo "║  Grant permissions when prompted.    ║"
 echo "║  If Screen Recording fails, quit     ║"
 echo "║  and reopen after granting.          ║"
+echo "║                                      ║"
+if command -v ollama >/dev/null 2>&1; then
+echo "║  AI Summary: Ollama ready            ║"
+else
+echo "║  AI Summary: install Ollama to use   ║"
+fi
 echo "╚══════════════════════════════════════╝"
 echo ""
