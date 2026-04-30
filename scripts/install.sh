@@ -32,12 +32,29 @@ MACOS_VER=$(sw_vers -productVersion)
 MACOS_MAJOR=$(echo "$MACOS_VER" | cut -d. -f1)
 info "Detected macOS $MACOS_VER"
 
-# Locate MeetingPilot.app relative to this script
+# Locate MeetingPilot.app — either next to script or find zip to extract
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_APP="$SCRIPT_DIR/$APP.app"
 
 if [ ! -d "$SOURCE_APP" ]; then
-    fail "$APP.app not found next to this script. Expected: $SOURCE_APP"
+    # Look for zip file next to script or passed as argument
+    ZIP_FILE=""
+    if [ -n "$1" ] && [ -f "$1" ]; then
+        ZIP_FILE="$1"
+    else
+        ZIP_FILE=$(find "$SCRIPT_DIR" -maxdepth 1 -name "$APP*.zip" | head -1)
+        [ -z "$ZIP_FILE" ] && ZIP_FILE=$(find "$(pwd)" -maxdepth 1 -name "$APP*.zip" | head -1)
+    fi
+
+    if [ -n "$ZIP_FILE" ] && [ -f "$ZIP_FILE" ]; then
+        info "Extracting $ZIP_FILE ..."
+        unzip -qo "$ZIP_FILE" -d "$SCRIPT_DIR"
+        SOURCE_APP=$(find "$SCRIPT_DIR" -name "$APP.app" -maxdepth 2 -type d | head -1)
+    fi
+
+    if [ ! -d "$SOURCE_APP" ]; then
+        fail "$APP.app not found. Place this script next to $APP.app or a $APP*.zip file."
+    fi
 fi
 
 # Stop existing instance
