@@ -1,24 +1,23 @@
 import Foundation
 import MeetingPilotCore
-import MLXLLM
-import MLXLMCommon
 
 final class SummaryService: ObservableObject {
     @Published var streamingText: String = ""
     @Published var isGenerating: Bool = false
     @Published var lastError: String = ""
 
-    private let maxTokens = 400
+    private let maxTokens = 512
+    private static let baseURL = "http://localhost:11434"
 
-    func generateSummary(from entries: [TranscriptEntry], using modelManager: SummaryModelManager) async {
-        guard let container = modelManager.container else {
-            await MainActor.run { lastError = "No AI model loaded. Please download one in Settings." }
-            return
-        }
-
+    func generateSummary(from entries: [TranscriptEntry], modelName: String) async {
         let transcript = entries.map { "[\($0.speaker)] \($0.text)" }.joined(separator: "\n")
         guard !transcript.isEmpty else {
             await MainActor.run { lastError = "No transcript to summarize." }
+            return
+        }
+
+        guard !modelName.isEmpty else {
+            await MainActor.run { lastError = "No AI model selected. Please select one in Settings." }
             return
         }
 
@@ -30,60 +29,90 @@ final class SummaryService: ObservableObject {
 
         let prompt = buildPrompt(transcript: transcript)
 
+        guard let url = URL(string: "\(Self.baseURL)/api/generate") else {
+            await MainActor.run {
+                isGenerating = false
+                lastError = "Invalid Ollama URL"
+            }
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 120
+
+        let body: [String: Any] = [
+            "model": modelName,
+            "prompt": prompt,
+            "stream": true,
+            "options": [
+                "temperature": 0.4,
+                "top_p": 0.9,
+                "repeat_penalty": 1.2,
+                "num_predict": maxTokens,
+            ]
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
         do {
-            let params = GenerateParameters(
-                temperature: 0.4,
-                topP: 0.9,
-                repetitionPenalty: 1.2,
-                repetitionContextSize: 64
-            )
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
 
-            try await container.perform { [weak self] (context: ModelContext) in
-                guard let self else { return }
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                await MainActor.run {
+                    isGenerating = false
+                    lastError = "Ollama returned HTTP \(code). Is the model '\(modelName)' installed?"
+                }
+                return
+            }
 
-                let userInput = UserInput(prompt: prompt)
-                let lmInput = try await context.processor.prepare(input: userInput)
+            var output = ""
+            var recentLines: [String] = []
 
-                var tokenCount = 0
-                var recentLines: [String] = []
-                let outputRef = UnsafeMutablePointer<String>.allocate(capacity: 1)
-                outputRef.initialize(to: "")
-                defer { outputRef.deinitialize(count: 1); outputRef.deallocate() }
+            for try await line in bytes.lines {
+                guard let lineData = line.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
+                    continue
+                }
 
-                _ = try MLXLMCommon.generate(
-                    input: lmInput,
-                    parameters: params,
-                    context: context
-                ) { tokens in
-                    if tokens.count > tokenCount {
-                        let newSlice = Array(tokens[tokenCount..<tokens.count])
-                        tokenCount = tokens.count
-                        let piece = context.tokenizer.decode(tokens: newSlice)
-                        outputRef.pointee += piece
+                if let piece = json["response"] as? String {
+                    output += piece
 
-                        let snapshot = outputRef.pointee
-                        if self.detectLoop(in: snapshot, recentLines: &recentLines) {
-                            return .stop
-                        }
-
-                        let cleaned = self.cleanOutput(snapshot)
-                        Task { @MainActor in
-                            self.streamingText = cleaned
-                        }
+                    if detectLoop(in: output, recentLines: &recentLines) {
+                        mplog("Loop detected, stopping generation")
+                        break
                     }
-                    return tokenCount < self.maxTokens ? .more : .stop
+
+                    let cleaned = cleanOutput(output)
+                    await MainActor.run {
+                        streamingText = cleaned
+                    }
+                }
+
+                if let done = json["done"] as? Bool, done {
+                    break
+                }
+
+                if let errorMsg = json["error"] as? String {
+                    await MainActor.run {
+                        isGenerating = false
+                        lastError = errorMsg
+                    }
+                    return
                 }
             }
 
+            let finalOutput = output
             await MainActor.run {
-                streamingText = cleanOutput(streamingText)
+                streamingText = cleanOutput(finalOutput)
                 isGenerating = false
             }
-            mplog("Summary generation complete (\(streamingText.count) chars)")
+            mplog("Summary generation complete (\(finalOutput.count) chars)")
         } catch {
             await MainActor.run {
                 isGenerating = false
-                lastError = error.localizedDescription
+                lastError = "Connection to Ollama failed: \(error.localizedDescription)"
             }
             mplog("Summary generation failed: \(error.localizedDescription)")
         }
@@ -98,8 +127,9 @@ final class SummaryService: ObservableObject {
         }
 
         return """
-        <|system|>You summarize meetings. Be concise. Output ONLY the summary, nothing else.<|end|>
-        <|user|>Summarize this meeting transcript.
+        You summarize meetings. Be concise. Output ONLY the summary, nothing else.
+
+        Summarize this meeting transcript.
 
         TRANSCRIPT:
         \(truncated)
@@ -115,12 +145,10 @@ final class SummaryService: ObservableObject {
         - task 1 (owner)
         - task 2 (owner)
 
-        If no action items, write "None identified."<|end|>
-        <|assistant|>
+        If no action items, write "None identified."
         """
     }
 
-    /// Detect repetitive loop patterns in generated text
     private func detectLoop(in text: String, recentLines: inout [String]) -> Bool {
         let lines = text.components(separatedBy: "\n")
         guard lines.count > recentLines.count else { return false }
@@ -143,11 +171,9 @@ final class SummaryService: ObservableObject {
         return false
     }
 
-    /// Remove trailing repeated lines and clean up formatting
     private func cleanOutput(_ text: String) -> String {
         var lines = text.components(separatedBy: "\n")
 
-        // Remove trailing duplicate lines
         while lines.count > 2 {
             let last = lines.last?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let prev = lines[lines.count - 2].trimmingCharacters(in: .whitespacesAndNewlines)

@@ -70,9 +70,10 @@ struct ContentView: View {
         .onChange(of: recorder.entries.count) { translateCommittedEntries() }
         .onChange(of: recorder.state) {
             if recorder.state == .completed && summaryModelManager.isReady {
-                generateSummary()
+                showSummary = true
             }
         }
+        .task { await summaryModelManager.checkConnection() }
         .onAppear { refreshPermissionStatus() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshPermissionStatus()
@@ -345,27 +346,45 @@ struct ContentView: View {
         } label: {
             HStack(spacing: 4) {
                 Circle()
-                    .fill(summaryModelManager.isReady ? .green : .orange)
+                    .fill(ollamaBadgeColor)
                     .frame(width: 6, height: 6)
-                Text(summaryModelManager.isReady ? "AI Ready" : "Setup AI Model")
+                Text(ollamaBadgeLabel)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(summaryModelManager.isReady ? .green.opacity(0.8) : .orange.opacity(0.9))
+                    .foregroundStyle(ollamaBadgeColor.opacity(0.9))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(
                 summaryModelManager.isReady
                     ? Color.white.opacity(0.04)
-                    : Color.orange.opacity(0.1),
+                    : ollamaBadgeColor.opacity(0.1),
                 in: Capsule()
             )
             .overlay(
                 summaryModelManager.isReady
                     ? nil
-                    : Capsule().stroke(Color.orange.opacity(0.2), lineWidth: 0.5)
+                    : Capsule().stroke(ollamaBadgeColor.opacity(0.2), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private var ollamaBadgeColor: Color {
+        switch summaryModelManager.connectionState {
+        case .ready: return .green
+        case .connected, .pulling: return .orange
+        default: return .red
+        }
+    }
+
+    private var ollamaBadgeLabel: String {
+        switch summaryModelManager.connectionState {
+        case .ready: return "AI Ready"
+        case .connected: return "No Model"
+        case .pulling: return "Pulling..."
+        case .connecting: return "Connecting..."
+        default: return "Ollama Offline"
+        }
     }
 
     // MARK: - Status Strip
@@ -443,17 +462,19 @@ struct ContentView: View {
                 .font(.system(size: 18))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("AI Summary not configured")
+                Text(summaryModelManager.isConnected ? "No AI model selected" : "Ollama not connected")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
-                Text("Download an AI model to get meeting summaries and action items after recording.")
+                Text(summaryModelManager.isConnected
+                     ? "Select or pull an AI model to get meeting summaries after recording."
+                     : "Install and start Ollama to enable local AI summaries.")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.textSecondary)
             }
 
             Spacer()
 
-            Button("Setup AI Model") {
+            Button(summaryModelManager.isConnected ? "Select Model" : "Setup Ollama") {
                 onOpenModelSettings?()
             }
             .font(.system(size: 12, weight: .semibold))
@@ -728,6 +749,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .disabled(!summaryModelManager.isReady || summaryService.isGenerating)
+        .help(summaryModelManager.isReady ? "Generate AI summary" : "Connect Ollama and select a model first")
     }
 
     private var startButton: some View {
@@ -930,7 +952,10 @@ struct ContentView: View {
     private func generateSummary() {
         showSummary = true
         Task {
-            await summaryService.generateSummary(from: recorder.entries, using: summaryModelManager)
+            await summaryService.generateSummary(
+                from: recorder.entries,
+                modelName: summaryModelManager.selectedModel
+            )
             if !summaryService.streamingText.isEmpty, !recorder.exportedFilePath.isEmpty {
                 saveSummaryToExport()
             }

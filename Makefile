@@ -34,13 +34,6 @@ run: setup-cert
 		if [ -f "Resources/AppIcon.icns" ]; then \
 			cp "Resources/AppIcon.icns" "$$CONTENTS_DIR/Resources/AppIcon.icns"; \
 		fi; \
-		MLX_METALLIB="$$(python3 -c 'import mlx; print(mlx.__path__[0])' 2>/dev/null)/lib/mlx.metallib"; \
-		if [ -f "$$MLX_METALLIB" ]; then \
-			cp "$$MLX_METALLIB" "$$MACOS_DIR/mlx.metallib"; \
-			echo "Copied mlx.metallib from Python MLX package."; \
-		else \
-			echo "WARNING: mlx.metallib not found — AI summary may not work."; \
-		fi; \
 		echo "$$NEW_HASH" > "$$HASH_FILE"; \
 		/usr/bin/codesign --force --sign "$(CERT_NAME)" \
 			--entitlements $(ENTITLEMENTS) \
@@ -63,13 +56,6 @@ install: setup-cert
 	mkdir -p "$$MACOS_DIR"; \
 	cp "$$BIN_PATH/$(APP)" "$$MACOS_DIR/$(APP)"; \
 	cp "Sources/MeetingPilot/Info.plist" "$$CONTENTS_DIR/Info.plist"; \
-	MLX_METALLIB="$$(python3 -c 'import mlx; print(mlx.__path__[0])' 2>/dev/null)/lib/mlx.metallib"; \
-	if [ -f "$$MLX_METALLIB" ]; then \
-		cp "$$MLX_METALLIB" "$$MACOS_DIR/mlx.metallib"; \
-		echo "Copied mlx.metallib from Python MLX package."; \
-	else \
-		echo "WARNING: mlx.metallib not found. Install with: pip3 install mlx==0.21.1"; \
-	fi; \
 	xattr -cr "$$APP_BUNDLE"; \
 	/usr/bin/codesign --force --sign "$(CERT_NAME)" \
 		--entitlements $(ENTITLEMENTS) \
@@ -93,11 +79,6 @@ deploy: setup-cert
 	mkdir -p "$$MACOS_DIR"; \
 	cp "$$BIN_PATH/$(APP)" "$$MACOS_DIR/$(APP)"; \
 	cp "Sources/MeetingPilot/Info.plist" "$$APP_DIR/Info.plist"; \
-	MLX_METALLIB="$$(python3 -c 'import mlx; print(mlx.__path__[0])' 2>/dev/null)/lib/mlx.metallib"; \
-	if [ -f "$$MLX_METALLIB" ]; then \
-		cp "$$MLX_METALLIB" "$$MACOS_DIR/mlx.metallib"; \
-		echo "Included mlx.metallib for AI summary support."; \
-	fi; \
 	xattr -cr "$$DEPLOY_DIR/$(APP).app"; \
 	/usr/bin/codesign --force --sign "$(CERT_NAME)" \
 		--entitlements MeetingPilot-deploy.entitlements \

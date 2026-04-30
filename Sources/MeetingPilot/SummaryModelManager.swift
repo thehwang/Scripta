@@ -1,149 +1,231 @@
 import Foundation
 import MeetingPilotCore
-import MLXLLM
-import MLXLMCommon
 
-enum LLMModelDownloadState: Equatable {
-    case notDownloaded
-    case downloading(progress: Double)
-    case loading
+enum OllamaConnectionState: Equatable {
+    case disconnected
+    case connecting
+    case connected
+    case pulling(model: String, progress: Double)
     case ready
     case failed(message: String)
 }
 
-struct LLMModelInfo: Identifiable {
-    let id: String
+struct OllamaModel: Identifiable, Equatable {
     let name: String
-    let sizeDescription: String
-    let description: String
-    let isDefault: Bool
-    let overrideTokenizer: String?
-    let extraEOSTokens: Set<String>
+    let size: Int64
+    let modifiedAt: String
 
-    var modelConfiguration: ModelConfiguration {
-        ModelConfiguration(
-            id: id,
-            overrideTokenizer: overrideTokenizer,
-            extraEOSTokens: extraEOSTokens
-        )
+    var id: String { name }
+
+    var sizeDescription: String {
+        let gb = Double(size) / 1_073_741_824
+        if gb >= 1.0 {
+            return String(format: "%.1f GB", gb)
+        }
+        let mb = Double(size) / 1_048_576
+        return String(format: "%.0f MB", mb)
     }
 }
 
+struct RecommendedModel: Identifiable {
+    let name: String
+    let displayName: String
+    let sizeDescription: String
+    let description: String
+    let isDefault: Bool
+
+    var id: String { name }
+}
+
 final class SummaryModelManager: ObservableObject {
-    @Published var downloadState: LLMModelDownloadState = .notDownloaded
-    @Published var selectedModelId: String {
-        didSet { UserDefaults.standard.set(selectedModelId, forKey: Self.modelKey) }
+    @Published var connectionState: OllamaConnectionState = .disconnected
+    @Published var installedModels: [OllamaModel] = []
+    @Published var selectedModel: String {
+        didSet { UserDefaults.standard.set(selectedModel, forKey: Self.modelKey) }
     }
 
-    private(set) var container: ModelContainer?
-
-    static let availableModels: [LLMModelInfo] = [
-        LLMModelInfo(
-            id: "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
-            name: "Qwen 2.5 1.5B (Recommended)",
-            sizeDescription: "~1 GB",
-            description: "Best balance of speed and quality for summaries",
-            isDefault: true,
-            overrideTokenizer: nil,
-            extraEOSTokens: ["<|im_end|>"]
+    static let recommendedModels: [RecommendedModel] = [
+        RecommendedModel(
+            name: "qwen2.5:3b",
+            displayName: "Qwen 2.5 3B",
+            sizeDescription: "~1.9 GB",
+            description: "Best for Chinese + English summaries",
+            isDefault: true
         ),
-        LLMModelInfo(
-            id: "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
-            name: "Qwen 2.5 0.5B",
-            sizeDescription: "~400 MB",
-            description: "Smallest & fastest, good for short meetings",
-            isDefault: false,
-            overrideTokenizer: nil,
-            extraEOSTokens: ["<|im_end|>"]
+        RecommendedModel(
+            name: "qwen2.5:1.5b",
+            displayName: "Qwen 2.5 1.5B",
+            sizeDescription: "~0.9 GB",
+            description: "Lightweight, fast summaries",
+            isDefault: false
         ),
-        LLMModelInfo(
-            id: "mlx-community/Qwen2.5-3B-Instruct-4bit",
-            name: "Qwen 2.5 3B",
-            sizeDescription: "~2 GB",
-            description: "Higher quality, needs more memory",
-            isDefault: false,
-            overrideTokenizer: nil,
-            extraEOSTokens: ["<|im_end|>"]
-        ),
-        LLMModelInfo(
-            id: "mlx-community/Llama-3.2-1B-Instruct-4bit",
-            name: "Llama 3.2 1B",
-            sizeDescription: "~700 MB",
+        RecommendedModel(
+            name: "llama3.2:3b",
+            displayName: "Llama 3.2 3B",
+            sizeDescription: "~1.9 GB",
             description: "Strong English performance",
-            isDefault: false,
-            overrideTokenizer: nil,
-            extraEOSTokens: []
+            isDefault: false
         ),
-        LLMModelInfo(
-            id: "mlx-community/Llama-3.2-3B-Instruct-4bit",
-            name: "Llama 3.2 3B",
-            sizeDescription: "~2 GB",
-            description: "High quality English, needs more memory",
-            isDefault: false,
-            overrideTokenizer: nil,
-            extraEOSTokens: []
-        ),
-        LLMModelInfo(
-            id: "mlx-community/Phi-3.5-mini-instruct-4bit",
-            name: "Phi 3.5 Mini",
-            sizeDescription: "~2.3 GB",
-            description: "Microsoft model, strong reasoning",
-            isDefault: false,
-            overrideTokenizer: nil,
-            extraEOSTokens: ["<|end|>"]
+        RecommendedModel(
+            name: "llama3.2:1b",
+            displayName: "Llama 3.2 1B",
+            sizeDescription: "~0.7 GB",
+            description: "Smallest & fastest",
+            isDefault: false
         ),
     ]
 
-    private static let modelKey = "MeetingPilot.summaryModel"
+    private static let modelKey = "MeetingPilot.ollamaModel"
+    private static let baseURL = "http://localhost:11434"
 
-    var isReady: Bool { downloadState == .ready && container != nil }
+    var isReady: Bool {
+        connectionState == .ready && !selectedModel.isEmpty
+    }
+
+    var isConnected: Bool {
+        switch connectionState {
+        case .connected, .ready, .pulling:
+            return true
+        default:
+            return false
+        }
+    }
 
     init() {
-        let defaultId = Self.availableModels.first(where: \.isDefault)?.id ?? Self.availableModels[0].id
-        self.selectedModelId = UserDefaults.standard.string(forKey: Self.modelKey) ?? defaultId
+        let defaultModel = Self.recommendedModels.first(where: \.isDefault)?.name ?? "qwen2.5:3b"
+        self.selectedModel = UserDefaults.standard.string(forKey: Self.modelKey) ?? defaultModel
     }
 
-    var selectedModelInfo: LLMModelInfo? {
-        Self.availableModels.first { $0.id == selectedModelId }
-    }
+    func checkConnection() async {
+        await MainActor.run { connectionState = .connecting }
 
-    func loadSelectedModel() async {
-        guard let modelInfo = selectedModelInfo else {
-            await MainActor.run {
-                downloadState = .failed(message: "Unknown model selected.")
-            }
+        guard let url = URL(string: Self.baseURL) else {
+            await MainActor.run { connectionState = .failed(message: "Invalid Ollama URL") }
             return
         }
 
-        await MainActor.run { downloadState = .downloading(progress: 0) }
-
-        let configuration = modelInfo.modelConfiguration
-        mplog("Loading LLM model: \(modelInfo.id) overrideTokenizer=\(modelInfo.overrideTokenizer ?? "nil")")
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
 
         do {
-            let loaded = try await LLMModelFactory.shared.loadContainer(
-                configuration: configuration
-            ) { progress in
-                Task { @MainActor in
-                    self.downloadState = .downloading(progress: progress.fractionCompleted)
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                await MainActor.run { connectionState = .connected }
+                await refreshModels()
+            } else {
+                await MainActor.run {
+                    connectionState = .failed(message: "Ollama returned unexpected status")
+                }
+            }
+        } catch {
+            await MainActor.run {
+                connectionState = .disconnected
+            }
+            mplog("Ollama connection failed: \(error.localizedDescription)")
+        }
+    }
+
+    func refreshModels() async {
+        guard let url = URL(string: "\(Self.baseURL)/api/tags") else { return }
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let models = json["models"] as? [[String: Any]] {
+                let parsed = models.compactMap { dict -> OllamaModel? in
+                    guard let name = dict["name"] as? String else { return nil }
+                    let size = dict["size"] as? Int64 ?? 0
+                    let modified = dict["modified_at"] as? String ?? ""
+                    return OllamaModel(name: name, size: size, modifiedAt: modified)
+                }
+                await MainActor.run {
+                    self.installedModels = parsed
+                    if !parsed.isEmpty {
+                        if parsed.contains(where: { $0.name == selectedModel }) {
+                            connectionState = .ready
+                        } else {
+                            selectedModel = parsed[0].name
+                            connectionState = .ready
+                        }
+                    } else {
+                        connectionState = .connected
+                    }
+                }
+                mplog("Ollama models: \(parsed.map(\.name))")
+            }
+        } catch {
+            mplog("Failed to list Ollama models: \(error.localizedDescription)")
+        }
+    }
+
+    func pullModel(_ modelName: String) async {
+        guard let url = URL(string: "\(Self.baseURL)/api/pull") else { return }
+
+        await MainActor.run {
+            connectionState = .pulling(model: modelName, progress: 0)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 3600
+
+        let body: [String: Any] = ["name": modelName, "stream": true]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
+
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                await MainActor.run {
+                    connectionState = .failed(message: "Failed to pull model: HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+                }
+                return
+            }
+
+            for try await line in bytes.lines {
+                guard let lineData = line.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
+                    continue
+                }
+
+                if let total = json["total"] as? Int64, total > 0,
+                   let completed = json["completed"] as? Int64 {
+                    let progress = Double(completed) / Double(total)
+                    await MainActor.run {
+                        connectionState = .pulling(model: modelName, progress: progress)
+                    }
+                }
+
+                if let status = json["status"] as? String, status == "success" {
+                    break
+                }
+
+                if let errorMsg = json["error"] as? String {
+                    await MainActor.run {
+                        connectionState = .failed(message: errorMsg)
+                    }
+                    return
                 }
             }
 
             await MainActor.run {
-                self.container = loaded
-                self.downloadState = .ready
+                selectedModel = modelName
             }
-            mplog("LLM model loaded: \(modelInfo.id)")
+            await refreshModels()
+            mplog("Model pulled successfully: \(modelName)")
         } catch {
             await MainActor.run {
-                self.downloadState = .failed(message: error.localizedDescription)
+                connectionState = .failed(message: "Pull failed: \(error.localizedDescription)")
             }
-            mplog("LLM model load failed: \(error.localizedDescription)")
+            mplog("Model pull failed: \(error.localizedDescription)")
         }
     }
 
-    func unloadModel() {
-        container = nil
-        downloadState = .notDownloaded
+    func selectModel(_ name: String) {
+        selectedModel = name
+        if installedModels.contains(where: { $0.name == name }) {
+            connectionState = .ready
+        }
     }
 }
