@@ -118,6 +118,111 @@ final class SummaryService: ObservableObject {
         }
     }
 
+    @Published var chatStreamingText: String = ""
+    @Published var isChatGenerating: Bool = false
+
+    func askQuestion(
+        transcript: String,
+        chatHistory: [(role: String, text: String)],
+        question: String,
+        modelName: String
+    ) async throws -> String {
+        guard !modelName.isEmpty else { throw ChatError.noModel }
+
+        await MainActor.run {
+            chatStreamingText = ""
+            isChatGenerating = true
+        }
+
+        let truncated = transcript.count > 4000 ? String(transcript.suffix(4000)) : transcript
+
+        var prompt = """
+        You are an AI assistant helping analyze a meeting transcript. Answer questions based ONLY on the transcript content. Be concise and specific.
+
+        MEETING TRANSCRIPT:
+        \(truncated)
+        END TRANSCRIPT
+
+        """
+
+        for msg in chatHistory {
+            if msg.role == "user" {
+                prompt += "User: \(msg.text)\n"
+            } else {
+                prompt += "Assistant: \(msg.text)\n"
+            }
+        }
+        prompt += "User: \(question)\nAssistant:"
+
+        guard let url = URL(string: "\(Self.baseURL)/api/generate") else {
+            await MainActor.run { isChatGenerating = false }
+            throw ChatError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 120
+
+        let body: [String: Any] = [
+            "model": modelName,
+            "prompt": prompt,
+            "stream": true,
+            "options": [
+                "temperature": 0.5,
+                "top_p": 0.9,
+                "num_predict": 512,
+            ]
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
+
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                await MainActor.run { isChatGenerating = false }
+                throw ChatError.httpError(code)
+            }
+
+            var output = ""
+            for try await line in bytes.lines {
+                guard let lineData = line.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
+                    continue
+                }
+
+                if let piece = json["response"] as? String {
+                    output += piece
+                    let snapshot = output
+                    await MainActor.run { chatStreamingText = snapshot }
+                }
+
+                if let done = json["done"] as? Bool, done { break }
+            }
+
+            await MainActor.run { isChatGenerating = false }
+            return output.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            await MainActor.run { isChatGenerating = false }
+            throw error
+        }
+    }
+
+    enum ChatError: LocalizedError {
+        case noModel
+        case invalidURL
+        case httpError(Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .noModel: return "No AI model selected."
+            case .invalidURL: return "Invalid Ollama URL."
+            case .httpError(let code): return "Ollama returned HTTP \(code)."
+            }
+        }
+    }
+
     private func buildPrompt(transcript: String) -> String {
         let truncated: String
         if transcript.count > 3000 {

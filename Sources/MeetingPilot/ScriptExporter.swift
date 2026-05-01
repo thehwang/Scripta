@@ -10,7 +10,9 @@ enum ScriptExporter {
         translatedContent: String? = nil,
         micAudioURL: URL?,
         systemAudioURL: URL?,
-        startedAt: Date?
+        startedAt: Date?,
+        entryCount: Int = 0,
+        language: String = "en-US"
     ) throws -> URL {
         let fm = FileManager.default
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first
@@ -32,16 +34,49 @@ enum ScriptExporter {
             try translatedContent.write(to: translatedURL, atomically: true, encoding: .utf8)
         }
 
+        let hasAudio: Bool
         if let src = micAudioURL, fm.fileExists(atPath: src.path) {
             let dst = sessionDir.appendingPathComponent("audio-mic.m4a")
             try? fm.removeItem(at: dst)
             try fm.moveItem(at: src, to: dst)
-        }
-
-        if let src = systemAudioURL, fm.fileExists(atPath: src.path) {
+            hasAudio = true
+        } else if let src = systemAudioURL, fm.fileExists(atPath: src.path) {
+            hasAudio = true
             let dst = sessionDir.appendingPathComponent("audio-system.m4a")
             try? fm.removeItem(at: dst)
             try fm.moveItem(at: src, to: dst)
+        } else {
+            hasAudio = false
+        }
+
+        if let src = systemAudioURL, fm.fileExists(atPath: src.path),
+           !fm.fileExists(atPath: sessionDir.appendingPathComponent("audio-system.m4a").path) {
+            let dst = sessionDir.appendingPathComponent("audio-system.m4a")
+            try? fm.removeItem(at: dst)
+            try fm.moveItem(at: src, to: dst)
+        }
+
+        let duration: TimeInterval
+        if let start = startedAt {
+            duration = Date().timeIntervalSince(start)
+        } else {
+            duration = 0
+        }
+
+        let metadata = SessionMetadata(
+            date: startedAt ?? Date(),
+            duration: duration,
+            entryCount: entryCount,
+            language: language,
+            hasSummary: false,
+            hasAudio: hasAudio
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = .prettyPrinted
+        if let jsonData = try? encoder.encode(metadata) {
+            let metaURL = sessionDir.appendingPathComponent("session.json")
+            try? jsonData.write(to: metaURL)
         }
 
         return sessionDir

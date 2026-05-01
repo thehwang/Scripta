@@ -778,7 +778,9 @@ final class MeetingRecorder: NSObject, ObservableObject {
                 translatedContent: translatedContent,
                 micAudioURL: micAudioURL,
                 systemAudioURL: systemAudioURL,
-                startedAt: recordingStartedAt
+                startedAt: recordingStartedAt,
+                entryCount: entries.count,
+                language: recognitionLanguage
             )
             exportedFilePath = sessionDir.path
             state = .completed

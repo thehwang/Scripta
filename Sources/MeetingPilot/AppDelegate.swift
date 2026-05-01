@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recorder = MeetingRecorder()
     private let summaryModelManager = SummaryModelManager()
     private let translationService = TranslationService()
+    private let meetingStore = MeetingStore()
     private var savedFullFrame: NSRect?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -96,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Start/Stop Recording", action: #selector(toggleRecording), keyEquivalent: "r")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Toggle Minimal/Full View", action: #selector(toggleDisplayMode), keyEquivalent: "m")
+        menu.addItem(withTitle: "Meeting History", action: #selector(openHistory), keyEquivalent: "h")
         menu.addItem(withTitle: "AI Model Settings...", action: #selector(showSetup), keyEquivalent: ",")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Meeting Pilot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -141,6 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             recorder: recorder,
             summaryModelManager: summaryModelManager,
             translationService: translationService,
+            meetingStore: meetingStore,
             onOpenModelSettings: { [weak self] in
                 self?.showSetupWindow()
             }
@@ -178,6 +181,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let next: DisplayMode = (current == DisplayMode.minimal.rawValue) ? .full : .minimal
         UserDefaults.standard.set(next.rawValue, forKey: "MeetingPilot.displayMode")
         NotificationCenter.default.post(name: .displayModeChanged, object: next)
+    }
+
+    @objc private func openHistory() {
+        showMainWindow()
+        NotificationCenter.default.post(name: .showMeetingHistory, object: nil)
     }
 
     @objc private func toggleRecording() {
