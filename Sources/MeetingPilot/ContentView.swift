@@ -29,6 +29,7 @@ enum DisplayMode: String {
 
 extension Notification.Name {
     static let displayModeChanged = Notification.Name("MeetingPilot.displayModeChanged")
+    static let showMeetingHistory = Notification.Name("MeetingPilot.showMeetingHistory")
 }
 
 // MARK: - Main View
@@ -37,18 +38,25 @@ struct ContentView: View {
     @ObservedObject var recorder: MeetingRecorder
     @ObservedObject var summaryModelManager: SummaryModelManager
     @ObservedObject var translationService: TranslationService
+    @ObservedObject var meetingStore: MeetingStore
     var onOpenModelSettings: (() -> Void)?
 
     @StateObject private var summaryService = SummaryService()
     @State private var hasMicPermission = false
     @State private var now = Date()
     @State private var showSummary = false
+    @State private var showChatPanel = false
+    @State private var showHistoryPanel = false
     @AppStorage("MeetingPilot.displayMode") private var displayMode: String = DisplayMode.full.rawValue
     @AppStorage("MeetingPilot.fontScale") private var fontScale: Double = 1.0
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var isMinimal: Bool { displayMode == DisplayMode.minimal.rawValue }
+
+    private var liveTranscriptText: String {
+        recorder.entries.map { "[\($0.speaker)] \($0.text)" }.joined(separator: "\n")
+    }
 
     private let fontScaleMin: Double = 0.7
     private let fontScaleMax: Double = 1.8
@@ -79,41 +87,65 @@ struct ContentView: View {
             refreshPermissionStatus()
         }
         .onReceive(timer) { now = $0; translateCommittedEntries() }
+        .onReceive(NotificationCenter.default.publisher(for: .showMeetingHistory)) { _ in
+            showHistoryPanel = true
+        }
         .modifier(TranslationTaskModifier(translationService: translationService))
     }
 
     // MARK: - Full Mode Body
 
     private var fullBody: some View {
-        ZStack {
-            Theme.bg.ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                topBar
-                Divider().background(Theme.border)
+        HSplitView {
+            ZStack {
+                Theme.bg.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    if !hasMicPermission && recorder.state == .idle {
-                        permissionBanner.padding(.horizontal, 20).padding(.top, 16)
-                    }
-                    if !summaryModelManager.isReady && recorder.state == .idle {
-                        aiModelBanner.padding(.horizontal, 20).padding(.top, 16)
-                    }
-                    statusStrip.padding(.horizontal, 20).padding(.top, 16)
-                    transcriptPanel.padding(.horizontal, 20).padding(.top, 12)
+                    topBar
+                    Divider().background(Theme.border)
 
-                    if showSummary || summaryService.isGenerating || !summaryService.streamingText.isEmpty {
-                        summaryPanel.padding(.horizontal, 20).padding(.top, 8)
+                    VStack(spacing: 0) {
+                        if !hasMicPermission && recorder.state == .idle {
+                            permissionBanner.padding(.horizontal, 20).padding(.top, 16)
+                        }
+                        if !summaryModelManager.isReady && recorder.state == .idle {
+                            aiModelBanner.padding(.horizontal, 20).padding(.top, 16)
+                        }
+                        statusStrip.padding(.horizontal, 20).padding(.top, 16)
+                        transcriptPanel.padding(.horizontal, 20).padding(.top, 12)
+
+                        if showSummary || summaryService.isGenerating || !summaryService.streamingText.isEmpty {
+                            summaryPanel.padding(.horizontal, 20).padding(.top, 8)
+                        }
+
+                        exportStrip.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 8)
                     }
 
-                    exportStrip.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 8)
+                    Spacer(minLength: 0)
+                    bottomBar
                 }
+            }
+            .frame(minWidth: 560)
 
-                Spacer(minLength: 0)
-                bottomBar
+            if showChatPanel {
+                ChatPanel(
+                    transcriptText: liveTranscriptText,
+                    modelName: summaryModelManager.selectedModel,
+                    isModelReady: summaryModelManager.isReady
+                )
+                .frame(minWidth: 260, idealWidth: 320, maxWidth: 450)
             }
         }
-        .frame(minWidth: 760, minHeight: 680)
+        .frame(minWidth: showChatPanel ? 900 : 760, minHeight: 680)
+        .sheet(isPresented: $showHistoryPanel) {
+            HistoryPanel(
+                store: meetingStore,
+                modelName: summaryModelManager.selectedModel,
+                isModelReady: summaryModelManager.isReady,
+                onDismiss: { showHistoryPanel = false }
+            )
+            .frame(minWidth: 600, minHeight: 500)
+        }
     }
 
     // MARK: - Minimal Mode Body (Live Captions Style)
@@ -298,6 +330,32 @@ struct ContentView: View {
                 .frame(maxWidth: 280)
                 .padding(.trailing, 8)
             }
+
+            Button {
+                showHistoryPanel = true
+            } label: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textMuted)
+                    .frame(width: 28, height: 28)
+                    .background(Color.white.opacity(0.04), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Meeting history")
+            .padding(.trailing, 2)
+
+            Button {
+                showChatPanel.toggle()
+            } label: {
+                Image(systemName: showChatPanel ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
+                    .font(.system(size: 12))
+                    .foregroundStyle(showChatPanel ? Theme.accent : Theme.textMuted)
+                    .frame(width: 28, height: 28)
+                    .background(showChatPanel ? Theme.accent.opacity(0.12) : Color.white.opacity(0.04), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help(showChatPanel ? "Hide chat panel" : "Open chat panel")
+            .padding(.trailing, 2)
 
             fontSizeControls
                 .padding(.trailing, 4)
