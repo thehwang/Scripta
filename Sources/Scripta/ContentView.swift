@@ -49,6 +49,8 @@ struct ContentView: View {
     @State private var showHistoryPanel = false
     @AppStorage("Scripta.displayMode") private var displayMode: String = DisplayMode.full.rawValue
     @AppStorage("Scripta.fontScale") private var fontScale: Double = 1.0
+    @AppStorage("Scripta.recordingDisclaimerAccepted") private var disclaimerAccepted = false
+    @State private var showRecordingDisclaimer = false
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -64,6 +66,14 @@ struct ContentView: View {
 
     private func scaled(_ baseSize: CGFloat) -> CGFloat {
         baseSize * CGFloat(fontScale)
+    }
+
+    private func requestStartRecording() {
+        if disclaimerAccepted {
+            Task { @MainActor in await recorder.startRecording() }
+        } else {
+            showRecordingDisclaimer = true
+        }
     }
 
     var body: some View {
@@ -91,6 +101,15 @@ struct ContentView: View {
             showHistoryPanel = true
         }
         .modifier(TranslationTaskModifier(translationService: translationService))
+        .alert("Recording Notice", isPresented: $showRecordingDisclaimer) {
+            Button("I Understand & Agree") {
+                disclaimerAccepted = true
+                Task { @MainActor in await recorder.startRecording() }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Recording conversations may be subject to local consent laws. In many jurisdictions, all participants must be informed and consent before being recorded.\n\nYou are solely responsible for complying with applicable laws. By proceeding, you acknowledge this responsibility.")
+        }
     }
 
     // MARK: - Full Mode Body
@@ -247,7 +266,7 @@ struct ContentView: View {
                 .buttonStyle(.plain)
             } else {
                 Button {
-                    Task { @MainActor in await recorder.startRecording() }
+                    requestStartRecording()
                 } label: {
                     Image(systemName: "record.circle")
                         .font(.system(size: 14, weight: .semibold))
@@ -812,7 +831,7 @@ struct ContentView: View {
 
     private var startButton: some View {
         Button {
-            Task { @MainActor in await recorder.startRecording() }
+            requestStartRecording()
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "record.circle")
