@@ -134,16 +134,23 @@ final class SummaryService: ObservableObject {
             isChatGenerating = true
         }
 
-        let truncated = transcript.count > 4000 ? String(transcript.suffix(4000)) : transcript
+        var prompt: String
+        if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            prompt = """
+            You are a helpful AI assistant. Be concise and specific.
 
-        var prompt = """
-        You are an AI assistant helping analyze a meeting transcript. Answer questions based ONLY on the transcript content. Be concise and specific.
+            """
+        } else {
+            let truncated = transcript.count > 4000 ? String(transcript.suffix(4000)) : transcript
+            prompt = """
+            You are an AI assistant helping analyze a meeting transcript. Answer questions based ONLY on the transcript content. Be concise and specific.
 
-        MEETING TRANSCRIPT:
-        \(truncated)
-        END TRANSCRIPT
+            MEETING TRANSCRIPT:
+            \(truncated)
+            END TRANSCRIPT
 
-        """
+            """
+        }
 
         for msg in chatHistory {
             if msg.role == "user" {

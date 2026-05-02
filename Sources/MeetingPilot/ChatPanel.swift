@@ -109,15 +109,18 @@ struct ChatPanel: View {
             Image(systemName: "questionmark.bubble")
                 .font(.system(size: 24))
                 .foregroundStyle(Theme.textMuted)
-            Text("Ask questions about the meeting")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.textMuted)
             if !transcriptText.isEmpty {
+                Text("Ask questions about the meeting")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textMuted)
                 Text("e.g. \"What decisions were made?\"")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.textMuted.opacity(0.7))
             } else {
-                Text("Record or load a meeting first")
+                Text("Ask AI anything")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textMuted)
+                Text("Record a meeting for transcript-based Q&A")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.textMuted.opacity(0.7))
             }
@@ -172,7 +175,7 @@ struct ChatPanel: View {
 
     private var inputBar: some View {
         HStack(spacing: 8) {
-            TextField("Ask about this meeting...", text: $inputText)
+            TextField(transcriptText.isEmpty ? "Ask AI anything..." : "Ask about this meeting...", text: $inputText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textPrimary)
@@ -180,7 +183,7 @@ struct ChatPanel: View {
                 .padding(.vertical, 8)
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10))
                 .onSubmit { sendMessage() }
-                .disabled(isGenerating || !isModelReady || transcriptText.isEmpty)
+                .disabled(isGenerating || !isModelReady)
 
             Button {
                 sendMessage()
@@ -200,7 +203,6 @@ struct ChatPanel: View {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !isGenerating
             && isModelReady
-            && !transcriptText.isEmpty
     }
 
     private func sendMessage() {
