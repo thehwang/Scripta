@@ -1,7 +1,7 @@
 import CoreGraphics
 import CoreMedia
 import Foundation
-import MeetingPilotCore
+import ScriptaCore
 import ScreenCaptureKit
 
 final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
@@ -13,7 +13,7 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
         var errorDescription: String? {
             switch self {
             case .permissionDenied:
-                return "Screen Recording permission is required. Add MeetingPilot in System Settings → Privacy & Security → Screen Recording."
+                return "Screen Recording permission is required. Add Scripta in System Settings → Privacy & Security → Screen Recording."
             case .noDisplayFound:
                 return "No display found for ScreenCaptureKit content filter."
             case .streamNotInitialized:

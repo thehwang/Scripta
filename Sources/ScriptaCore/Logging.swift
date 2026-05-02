@@ -1,7 +1,7 @@
 import Foundation
 
 private let logFile: FileHandle? = {
-    let dir = NSHomeDirectory() + "/Documents/MeetingPilotScripts"
+    let dir = NSHomeDirectory() + "/Documents/ScriptaScripts"
     try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     let path = dir + "/debug.log"
     FileManager.default.createFile(atPath: path, contents: nil)

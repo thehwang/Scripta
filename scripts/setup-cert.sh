@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-CERT_NAME="MeetingPilot Dev"
+CERT_NAME="Scripta Dev"
 KEYCHAIN=~/Library/Keychains/login.keychain-db
 
 if security find-identity -v -p codesigning | grep -q "$CERT_NAME"; then
@@ -25,8 +25,8 @@ prompt             = no
 x509_extensions    = codesign
 
 [ dn ]
-CN = MeetingPilot Dev
-O  = MeetingPilot Developer
+CN = Scripta Dev
+O  = Scripta Developer
 
 [ codesign ]
 keyUsage           = critical, digitalSignature

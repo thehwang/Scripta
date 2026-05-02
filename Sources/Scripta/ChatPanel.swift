@@ -1,5 +1,5 @@
 import SwiftUI
-import MeetingPilotCore
+import ScriptaCore
 
 struct ChatMessage: Identifiable {
     let id = UUID()

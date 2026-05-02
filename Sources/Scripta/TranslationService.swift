@@ -1,5 +1,5 @@
 import Foundation
-import MeetingPilotCore
+import ScriptaCore
 #if compiler(>=6.0) && canImport(Translation)
 import Translation
 #endif
@@ -12,20 +12,20 @@ enum TranslationDisplayMode: String, CaseIterable {
 
 final class TranslationService: ObservableObject {
     @Published var isEnabled: Bool = false {
-        didSet { UserDefaults.standard.set(isEnabled, forKey: "MeetingPilot.translationEnabled") }
+        didSet { UserDefaults.standard.set(isEnabled, forKey: "Scripta.translationEnabled") }
     }
     @Published var displayMode: TranslationDisplayMode = .bilingual {
-        didSet { UserDefaults.standard.set(displayMode.rawValue, forKey: "MeetingPilot.translationDisplayMode") }
+        didSet { UserDefaults.standard.set(displayMode.rawValue, forKey: "Scripta.translationDisplayMode") }
     }
     @Published var sourceLanguageCode: String = "en" {
         didSet {
-            UserDefaults.standard.set(sourceLanguageCode, forKey: "MeetingPilot.translationSource")
+            UserDefaults.standard.set(sourceLanguageCode, forKey: "Scripta.translationSource")
             configurationNeedsUpdate = true
         }
     }
     @Published var targetLanguageCode: String = "zh-Hans" {
         didSet {
-            UserDefaults.standard.set(targetLanguageCode, forKey: "MeetingPilot.translationTarget")
+            UserDefaults.standard.set(targetLanguageCode, forKey: "Scripta.translationTarget")
             configurationNeedsUpdate = true
         }
     }
@@ -50,15 +50,15 @@ final class TranslationService: ObservableObject {
     private var activeSession: Any?
 
     init() {
-        isEnabled = UserDefaults.standard.bool(forKey: "MeetingPilot.translationEnabled")
-        if let mode = UserDefaults.standard.string(forKey: "MeetingPilot.translationDisplayMode"),
+        isEnabled = UserDefaults.standard.bool(forKey: "Scripta.translationEnabled")
+        if let mode = UserDefaults.standard.string(forKey: "Scripta.translationDisplayMode"),
            let parsed = TranslationDisplayMode(rawValue: mode) {
             displayMode = parsed
         }
-        if let src = UserDefaults.standard.string(forKey: "MeetingPilot.translationSource"), !src.isEmpty {
+        if let src = UserDefaults.standard.string(forKey: "Scripta.translationSource"), !src.isEmpty {
             sourceLanguageCode = src
         }
-        if let tgt = UserDefaults.standard.string(forKey: "MeetingPilot.translationTarget"), !tgt.isEmpty {
+        if let tgt = UserDefaults.standard.string(forKey: "Scripta.translationTarget"), !tgt.isEmpty {
             targetLanguageCode = tgt
         }
         checkAvailability()

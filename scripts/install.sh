@@ -1,10 +1,10 @@
 #!/bin/bash
-# MeetingPilot Installer Script
+# Scripta Installer Script
 # Usage: curl -sL <url>/install.sh | bash
-#   or:  bash install.sh MeetingPilot-macos15.zip
+#   or:  bash install.sh Scripta-macos15.zip
 set -e
 
-APP="MeetingPilot"
+APP="Scripta"
 BUNDLE_ID="com.hwang.meetingpilot"
 INSTALL_DIR="/Applications"
 APP_PATH="$INSTALL_DIR/$APP.app"
@@ -23,7 +23,7 @@ fail()  { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 echo ""
 echo "╔══════════════════════════════════════╗"
-echo "║    MeetingPilot Installer            ║"
+echo "║    Scripta Installer            ║"
 echo "╚══════════════════════════════════════╝"
 echo ""
 
@@ -32,7 +32,7 @@ MACOS_VER=$(sw_vers -productVersion)
 MACOS_MAJOR=$(echo "$MACOS_VER" | cut -d. -f1)
 info "Detected macOS $MACOS_VER"
 
-# Locate MeetingPilot.app — either next to script or find zip to extract
+# Locate Scripta.app — either next to script or find zip to extract
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_APP="$SCRIPT_DIR/$APP.app"
 

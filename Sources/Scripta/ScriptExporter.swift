@@ -1,5 +1,5 @@
 import Foundation
-import MeetingPilotCore
+import ScriptaCore
 
 enum ScriptExporter {
 
@@ -17,7 +17,7 @@ enum ScriptExporter {
         let fm = FileManager.default
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents")
-        let baseDir = docs.appendingPathComponent("MeetingPilotScripts", isDirectory: true)
+        let baseDir = docs.appendingPathComponent("ScriptaScripts", isDirectory: true)
         try fm.createDirectory(at: baseDir, withIntermediateDirectories: true)
 
         let formatter = DateFormatter()
@@ -93,7 +93,7 @@ enum ScriptExporter {
         let endText = endedAt.map { dateFmt.string(from: $0) } ?? "unknown"
 
         var lines: [String] = [
-            "Meeting Pilot Script",
+            "Scripta Script",
             "====================",
             "Start: \(startText)",
             "End: \(endText)",
@@ -128,7 +128,7 @@ enum ScriptExporter {
         let endText = endedAt.map { dateFmt.string(from: $0) } ?? "unknown"
 
         var lines: [String] = [
-            "Meeting Pilot — Bilingual Transcript",
+            "Scripta — Bilingual Transcript",
             "=====================================",
             "Start: \(startText)",
             "End: \(endText)",

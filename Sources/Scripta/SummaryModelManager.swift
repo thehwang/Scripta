@@ -1,5 +1,5 @@
 import Foundation
-import MeetingPilotCore
+import ScriptaCore
 
 enum OllamaConnectionState: Equatable {
     case disconnected
@@ -75,7 +75,7 @@ final class SummaryModelManager: ObservableObject {
         ),
     ]
 
-    private static let modelKey = "MeetingPilot.ollamaModel"
+    private static let modelKey = "Scripta.ollamaModel"
     private static let baseURL = "http://localhost:11434"
 
     var isReady: Bool {

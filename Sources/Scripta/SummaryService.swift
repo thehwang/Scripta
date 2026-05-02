@@ -1,5 +1,5 @@
 import Foundation
-import MeetingPilotCore
+import ScriptaCore
 
 final class SummaryService: ObservableObject {
     @Published var streamingText: String = ""

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="build/AppIcon.iconset/icon_256x256.png" width="128" alt="MeetingPilot icon">
+  <img src="build/AppIcon.iconset/icon_256x256.png" width="128" alt="Scripta icon">
 </p>
 
-<h1 align="center">Meeting Pilot</h1>
+<h1 align="center">Scripta</h1>
 
 <p align="center">
   <strong>Privacy-first meeting transcription & AI summary for macOS</strong>
@@ -20,12 +20,12 @@
   <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="macOS 14+">
   <img src="https://img.shields.io/badge/swift-5.9-orange" alt="Swift 5.9">
   <img src="https://img.shields.io/badge/AI-Ollama-green" alt="Ollama">
-  <img src="https://img.shields.io/github/license/thehwang/MeetingPilot" alt="MIT License">
+  <img src="https://img.shields.io/github/license/thehwang/Scripta" alt="MIT License">
 </p>
 
 ---
 
-Meeting Pilot is a native macOS app that captures **both your microphone and system audio** during meetings, transcribes them in real-time using Apple's on-device speech recognition, and generates AI-powered summaries — all running **100% locally** on your Mac. No cloud. No subscriptions. No data leaves your machine.
+Scripta is a native macOS app that captures **both your microphone and system audio** during meetings, transcribes them in real-time using Apple's on-device speech recognition, and generates AI-powered summaries — all running **100% locally** on your Mac. No cloud. No subscriptions. No data leaves your machine.
 
 ## Features
 
@@ -51,7 +51,7 @@ Meeting Pilot is a native macOS app that captures **both your microphone and sys
 **Meeting History**
 - Browse and search all past sessions
 - View transcripts, summaries, and re-generate with AI
-- Sessions saved to `~/Documents/MeetingPilotScripts/`
+- Sessions saved to `~/Documents/ScriptaScripts/`
 
 **Two Display Modes**
 - **Full mode**: complete UI with transcript, summary, controls
@@ -66,26 +66,26 @@ Meeting Pilot is a native macOS app that captures **both your microphone and sys
 
 ### Quick Install (recommended)
 
-Download the latest release from the [Releases](https://github.com/thehwang/MeetingPilot/releases) page and run:
+Download the latest release from the [Releases](https://github.com/thehwang/Scripta/releases) page and run:
 
 ```bash
-cd ~/Downloads/MeetingPilot
+cd ~/Downloads/Scripta
 chmod +x install.sh
 ./install.sh
 ```
 
 The install script will:
-- Copy `MeetingPilot.app` to `/Applications`
+- Copy `Scripta.app` to `/Applications`
 - Install [Ollama](https://ollama.com) via Homebrew (if not already installed)
 - Start Ollama as a background service
 - Pull the default AI model (`qwen2.5:3b`)
 
 ### Manual Install
 
-1. Download and move `MeetingPilot.app` to `/Applications`
+1. Download and move `Scripta.app` to `/Applications`
 2. Install Ollama: `brew install ollama && brew services start ollama`
 3. Pull a model: `ollama pull qwen2.5:3b`
-4. Launch Meeting Pilot
+4. Launch Scripta
 
 ## Requirements
 
@@ -100,8 +100,8 @@ The install script will:
 ## Building from Source
 
 ```bash
-git clone https://github.com/thehwang/MeetingPilot.git
-cd MeetingPilot
+git clone https://github.com/thehwang/Scripta.git
+cd Scripta
 make run
 ```
 
@@ -110,9 +110,9 @@ This will build the app with Swift Package Manager, sign it with an ad-hoc certi
 ### Project Structure
 
 ```
-MeetingPilot/
+Scripta/
 ├── Sources/
-│   ├── MeetingPilot/         # Main app
+│   ├── Scripta/         # Main app
 │   │   ├── AppDelegate.swift
 │   │   ├── ContentView.swift       # Main UI (full + minimal modes)
 │   │   ├── MeetingRecorder.swift    # Recording orchestration
@@ -122,7 +122,7 @@ MeetingPilot/
 │   │   ├── HistoryPanel.swift       # Meeting history browser
 │   │   ├── TranslationService.swift # Apple Translation wrapper
 │   │   └── ...
-│   └── MeetingPilotCore/     # Shared types
+│   └── ScriptaCore/     # Shared types
 ├── Resources/
 │   └── AppIcon.icns
 ├── Makefile
@@ -131,7 +131,7 @@ MeetingPilot/
 
 ## Permissions
 
-Meeting Pilot requires the following macOS permissions (prompted on first launch):
+Scripta requires the following macOS permissions (prompted on first launch):
 
 - **Microphone** — to capture your voice
 - **Screen Recording** — to capture system/meeting audio via ScreenCaptureKit

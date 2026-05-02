@@ -26,7 +26,7 @@ jobs:
 
       - name: Package app
         run: |
-          APP="MeetingPilot"
+          APP="Scripta"
           BIN_PATH="$(swift build -c release --show-bin-path)"
           DIST_DIR="build/dist"
           APP_BUNDLE="$DIST_DIR/$APP.app"
@@ -34,24 +34,24 @@ jobs:
           mkdir -p "$APP_BUNDLE/Contents/MacOS"
           mkdir -p "$APP_BUNDLE/Contents/Resources"
           cp "$BIN_PATH/$APP" "$APP_BUNDLE/Contents/MacOS/$APP"
-          cp "Sources/MeetingPilot/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+          cp "Sources/Scripta/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
           [ -f "Resources/AppIcon.icns" ] && cp "Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
           xattr -cr "$APP_BUNDLE"
           /usr/bin/codesign --force --sign - \
-            --entitlements MeetingPilot-deploy.entitlements \
+            --entitlements Scripta-deploy.entitlements \
             --deep "$APP_BUNDLE"
 
       - name: Create ZIP
         run: |
           cp scripts/install.sh build/dist/install.sh
-          cd build/dist && zip -r ../../MeetingPilot-macos15.zip MeetingPilot.app install.sh
+          cd build/dist && zip -r ../../Scripta-macos15.zip Scripta.app install.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MeetingPilot-macos15
-          path: MeetingPilot-macos15.zip
+          name: Scripta-macos15
+          path: Scripta-macos15.zip
 
   build-macos14:
     runs-on: macos-14
@@ -70,7 +70,7 @@ jobs:
 
       - name: Package app
         run: |
-          APP="MeetingPilot"
+          APP="Scripta"
           BIN_PATH="$(swift build -c release --show-bin-path)"
           DIST_DIR="build/dist"
           APP_BUNDLE="$DIST_DIR/$APP.app"
@@ -78,24 +78,24 @@ jobs:
           mkdir -p "$APP_BUNDLE/Contents/MacOS"
           mkdir -p "$APP_BUNDLE/Contents/Resources"
           cp "$BIN_PATH/$APP" "$APP_BUNDLE/Contents/MacOS/$APP"
-          cp "Sources/MeetingPilot/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+          cp "Sources/Scripta/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
           [ -f "Resources/AppIcon.icns" ] && cp "Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
           xattr -cr "$APP_BUNDLE"
           /usr/bin/codesign --force --sign - \
-            --entitlements MeetingPilot-deploy.entitlements \
+            --entitlements Scripta-deploy.entitlements \
             --deep "$APP_BUNDLE"
 
       - name: Create ZIP
         run: |
           cp scripts/install.sh build/dist/install.sh
-          cd build/dist && zip -r ../../MeetingPilot-macos14.zip MeetingPilot.app install.sh
+          cd build/dist && zip -r ../../Scripta-macos14.zip Scripta.app install.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MeetingPilot-macos14
-          path: MeetingPilot-macos14.zip
+          name: Scripta-macos14
+          path: Scripta-macos14.zip
 
   release:
     needs: [build-macos15, build-macos14]
@@ -105,14 +105,14 @@ jobs:
       - name: Download macOS 15 artifact
         uses: actions/download-artifact@v4
         with:
-          name: MeetingPilot-macos15
+          name: Scripta-macos15
           path: artifacts/
 
       - name: Download macOS 14 artifact (optional)
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: MeetingPilot-macos14
+          name: Scripta-macos14
           path: artifacts/
 
       - name: Create GitHub Release
@@ -125,12 +125,12 @@ jobs:
 
             | File | macOS Version | Real-time Translation |
             |------|---------------|-----------------------|
-            | `MeetingPilot-macos15.zip` | macOS 15+ | Yes (Apple Translation) |
-            | `MeetingPilot-macos14.zip` | macOS 14+ | No |
+            | `Scripta-macos15.zip` | macOS 15+ | Yes (Apple Translation) |
+            | `Scripta-macos14.zip` | macOS 14+ | No |
 
             ### Install (one command):
             ```bash
-            unzip MeetingPilot-macos15.zip && bash install.sh
+            unzip Scripta-macos15.zip && bash install.sh
             ```
 
             The install script handles everything: copy to /Applications, clear quarantine,

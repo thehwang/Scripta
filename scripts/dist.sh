@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-APP="MeetingPilot"
+APP="Scripta"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DIST_DIR="$PROJECT_DIR/build/dist"
@@ -19,7 +19,7 @@ rm -rf "$DIST_DIR"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 
 cp "$BIN_PATH/$APP" "$APP_BUNDLE/Contents/MacOS/$APP"
-cp "Sources/MeetingPilot/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+cp "Sources/Scripta/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 if [ -f "Resources/AppIcon.icns" ]; then
     cp "Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
@@ -36,7 +36,7 @@ echo ""
 echo "=== Signing (ad-hoc, no certificate needed) ==="
 xattr -cr "$APP_BUNDLE"
 /usr/bin/codesign --force --sign - \
-    --entitlements MeetingPilot-deploy.entitlements \
+    --entitlements Scripta-deploy.entitlements \
     --deep "$APP_BUNDLE"
 
 echo ""

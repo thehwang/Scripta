@@ -5,13 +5,13 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>MeetingPilot</string>
+    <string>Scripta</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>MeetingPilot</string>
+    <string>Scripta</string>
     <key>CFBundleDisplayName</key>
-    <string>Meeting Pilot</string>
+    <string>Scripta</string>
     <key>CFBundleIdentifier</key>
     <string>com.hwang.meetingpilot</string>
     <key>CFBundlePackageType</key>
@@ -23,10 +23,10 @@
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Meeting Pilot needs microphone access to capture your voice during meetings.</string>
+    <string>Scripta needs microphone access to capture your voice during meetings.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Meeting Pilot needs speech recognition to generate real-time meeting transcripts.</string>
+    <string>Scripta needs speech recognition to generate real-time meeting transcripts.</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Meeting Pilot needs screen recording access to capture system audio from remote meeting participants.</string>
+    <string>Scripta needs screen recording access to capture system audio from remote meeting participants.</string>
 </dict>
 </plist>

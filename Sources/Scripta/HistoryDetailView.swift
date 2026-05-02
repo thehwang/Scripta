@@ -1,5 +1,5 @@
 import SwiftUI
-import MeetingPilotCore
+import ScriptaCore
 
 struct HistoryDetailView: View {
     let session: MeetingSession

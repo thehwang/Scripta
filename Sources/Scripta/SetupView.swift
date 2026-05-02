@@ -26,7 +26,7 @@ struct SetupView: View {
                 .foregroundStyle(.blue)
             Text("AI Summary Setup")
                 .font(.system(size: 22, weight: .semibold))
-            Text("MeetingPilot uses Ollama for local AI summaries.\nNo data leaves your Mac.")
+            Text("Scripta uses Ollama for local AI summaries.\nNo data leaves your Mac.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .font(.callout)
@@ -171,7 +171,7 @@ struct SetupView: View {
                     Label("AI model ready", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .font(.callout.weight(.medium))
-                    Button("Continue to Meeting Pilot") {
+                    Button("Continue to Scripta") {
                         onComplete()
                     }
                     .buttonStyle(.borderedProminent)

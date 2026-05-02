@@ -1,5 +1,5 @@
 import Foundation
-import MeetingPilotCore
+import ScriptaCore
 
 /// Read a 16-bit PCM WAV file (as produced by ffmpeg) into Float32 samples.
 func readWAV(_ path: String) -> (samples: [Float], sampleRate: Int)? {
@@ -222,7 +222,7 @@ func run() {
         let dur = clusterDuration[cluster, default: 0]
         print("  Speaker \(cluster + 1): \(cnt) segments, \(String(format: "%.1f", dur))s total")
     }
-    print("\nDebug: ~/Documents/MeetingPilotScripts/debug.log")
+    print("\nDebug: ~/Documents/ScriptaScripts/debug.log")
 }
 
 run()

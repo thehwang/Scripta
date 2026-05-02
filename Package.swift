@@ -8,24 +8,24 @@ let extraSwiftSettings: [SwiftSetting] = []
 #endif
 
 let package = Package(
-    name: "MeetingPilot",
+    name: "Scripta",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "MeetingPilot", targets: ["MeetingPilot"]),
+        .executable(name: "Scripta", targets: ["Scripta"]),
     ],
     dependencies: [],
     targets: [
         .target(
-            name: "MeetingPilotCore",
-            path: "Sources/MeetingPilotCore",
+            name: "ScriptaCore",
+            path: "Sources/ScriptaCore",
             swiftSettings: extraSwiftSettings
         ),
         .executableTarget(
-            name: "MeetingPilot",
+            name: "Scripta",
             dependencies: [
-                "MeetingPilotCore",
+                "ScriptaCore",
             ],
-            path: "Sources/MeetingPilot",
+            path: "Sources/Scripta",
             exclude: ["Info.plist"],
             swiftSettings: extraSwiftSettings,
             linkerSettings: [
@@ -33,7 +33,7 @@ let package = Package(
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
-                    "-Xlinker", "Sources/MeetingPilot/Info.plist"
+                    "-Xlinker", "Sources/Scripta/Info.plist"
                 ])
             ]
         ),

@@ -2,7 +2,7 @@ import AppKit
 import AVFoundation
 import CoreMedia
 import Foundation
-import MeetingPilotCore
+import ScriptaCore
 import Speech
 
 final class MeetingRecorder: NSObject, ObservableObject {
@@ -28,8 +28,8 @@ final class MeetingRecorder: NSObject, ObservableObject {
         entries.map { "[\($0.speaker)] \($0.text)" }.joined(separator: "\n")
     }
 
-    @Published var recognitionLanguage: String = UserDefaults.standard.string(forKey: "MeetingPilot.recognitionLanguage") ?? "en-US" {
-        didSet { UserDefaults.standard.set(recognitionLanguage, forKey: "MeetingPilot.recognitionLanguage") }
+    @Published var recognitionLanguage: String = UserDefaults.standard.string(forKey: "Scripta.recognitionLanguage") ?? "en-US" {
+        didSet { UserDefaults.standard.set(recognitionLanguage, forKey: "Scripta.recognitionLanguage") }
     }
 
     static let supportedRecognitionLanguages: [(code: String, name: String)] = [
@@ -112,7 +112,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
             mplog("startRecording: pipeline started, state = recording")
         } catch let error as SystemAudioCapture.CaptureError where error == .permissionDenied {
             state = .idle
-            statusMessage = "Screen Recording permission required. Open System Settings → Privacy & Security → Screen Recording → add Meeting Pilot."
+            statusMessage = "Screen Recording permission required. Open System Settings → Privacy & Security → Screen Recording → add Scripta."
             lastError = error.localizedDescription
             mplog("startRecording: screen recording permission denied")
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
@@ -190,13 +190,13 @@ final class MeetingRecorder: NSObject, ObservableObject {
             mplog("ensurePermissions: mic denied, opening Settings...")
             await MainActor.run {
                 lastError = "Microphone access denied."
-                statusMessage = "Open System Settings → Privacy & Security → Microphone → toggle ON for Meeting Pilot"
+                statusMessage = "Open System Settings → Privacy & Security → Microphone → toggle ON for Scripta"
             }
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
                 await MainActor.run { NSWorkspace.shared.open(url) }
             }
-            throw NSError(domain: "MeetingPilot", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "Microphone denied. Open System Settings → Privacy & Security → Microphone and enable Meeting Pilot."])
+            throw NSError(domain: "Scripta", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Microphone denied. Open System Settings → Privacy & Security → Microphone and enable Scripta."])
         }
 
         mplog("ensurePermissions: checking speech...")
@@ -217,13 +217,13 @@ final class MeetingRecorder: NSObject, ObservableObject {
             mplog("ensurePermissions: speech denied, opening System Settings...")
             await MainActor.run {
                 lastError = "Speech Recognition access denied."
-                statusMessage = "Open System Settings → Privacy & Security → Speech Recognition → toggle ON for Meeting Pilot"
+                statusMessage = "Open System Settings → Privacy & Security → Speech Recognition → toggle ON for Scripta"
             }
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition") {
                 await MainActor.run { NSWorkspace.shared.open(url) }
             }
-            throw NSError(domain: "MeetingPilot", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Speech Recognition not authorized. Open System Settings → Privacy & Security → Speech Recognition, find Meeting Pilot, and toggle it ON."])
+            throw NSError(domain: "Scripta", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Speech Recognition not authorized. Open System Settings → Privacy & Security → Speech Recognition, find Scripta, and toggle it ON."])
         }
         mplog("ensurePermissions: all OK (mic=notDetermined will be handled by engine)")
     }
@@ -245,12 +245,12 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
     private func beginAppleSpeechPipeline() async throws {
         guard let speechRecognizer else {
-            throw NSError(domain: "MeetingPilot", code: 3,
+            throw NSError(domain: "Scripta", code: 3,
                           userInfo: [NSLocalizedDescriptionKey: "Speech recognizer could not be created for '\(recognitionLanguage)'."])
         }
         if !speechRecognizer.isAvailable || !speechRecognizer.supportsOnDeviceRecognition {
             let langName = Self.supportedRecognitionLanguages.first { $0.code == recognitionLanguage }?.name ?? recognitionLanguage
-            throw NSError(domain: "MeetingPilot", code: 4,
+            throw NSError(domain: "Scripta", code: 4,
                           userInfo: [NSLocalizedDescriptionKey: "\(langName) speech model not downloaded. Go to System Settings → Keyboard → Dictation → Languages to download it."])
         }
 
@@ -327,7 +327,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
                 DispatchQueue.main.async { NSWorkspace.shared.open(url) }
             }
             throw NSError(
-                domain: "MeetingPilot", code: 4,
+                domain: "Scripta", code: 4,
                 userInfo: [NSLocalizedDescriptionKey: "Microphone not accessible. On macOS 15, try: open the app via double-click (not Terminal), or build from Xcode. Go to System Settings → Privacy & Security → Microphone to check."]
             )
         }
@@ -358,7 +358,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         }
 
         throw lastError ?? NSError(
-            domain: "MeetingPilot", code: 4,
+            domain: "Scripta", code: 4,
             userInfo: [NSLocalizedDescriptionKey: "Could not start audio engine. Make sure no other app is using the microphone."]
         )
     }

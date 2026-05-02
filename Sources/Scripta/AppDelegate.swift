@@ -1,5 +1,5 @@
 import AppKit
-import MeetingPilotCore
+import ScriptaCore
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var savedFullFrame: NSRect?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        UserDefaults.standard.set(DisplayMode.full.rawValue, forKey: "MeetingPilot.displayMode")
+        UserDefaults.standard.set(DisplayMode.full.rawValue, forKey: "Scripta.displayMode")
         loadAppIcon()
         setupMenuBar()
         showPermissionsWindow()
@@ -88,19 +88,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMenuBar() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "person.2.wave.2", accessibilityDescription: "Meeting Pilot")
-            button.toolTip = "Meeting Pilot"
+            button.image = NSImage(systemSymbolName: "person.2.wave.2", accessibilityDescription: "Scripta")
+            button.toolTip = "Scripta"
         }
 
         let menu = NSMenu()
-        menu.addItem(withTitle: "Open Meeting Pilot", action: #selector(openMainWindow), keyEquivalent: "o")
+        menu.addItem(withTitle: "Open Scripta", action: #selector(openMainWindow), keyEquivalent: "o")
         menu.addItem(withTitle: "Start/Stop Recording", action: #selector(toggleRecording), keyEquivalent: "r")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Toggle Minimal/Full View", action: #selector(toggleDisplayMode), keyEquivalent: "m")
         menu.addItem(withTitle: "Meeting History", action: #selector(openHistory), keyEquivalent: "h")
         menu.addItem(withTitle: "AI Model Settings...", action: #selector(showSetup), keyEquivalent: ",")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Meeting Pilot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Scripta", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         item.menu = menu
         statusItem = item
@@ -113,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hosting = NSHostingController(rootView: permView)
         let win = window ?? NSWindow(contentViewController: hosting)
         win.contentViewController = hosting
-        win.title = "Meeting Pilot"
+        win.title = "Scripta"
         win.setContentSize(NSSize(width: 740, height: 480))
         win.styleMask = [.titled, .closable]
         win.center()
@@ -129,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hosting = NSHostingController(rootView: setupView)
         let win = window ?? NSWindow(contentViewController: hosting)
         win.contentViewController = hosting
-        win.title = "Meeting Pilot — AI Model Setup"
+        win.title = "Scripta — AI Model Setup"
         win.setContentSize(NSSize(width: 560, height: 520))
         win.styleMask = [.titled, .closable]
         win.center()
@@ -152,13 +152,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let win = window {
             win.contentViewController = hosting
-            win.title = "Meeting Pilot"
+            win.title = "Scripta"
             win.setContentSize(NSSize(width: 760, height: 680))
             win.styleMask.insert(.resizable)
             win.makeKeyAndOrderFront(nil)
         } else {
             let win = NSWindow(contentViewController: hosting)
-            win.title = "Meeting Pilot"
+            win.title = "Scripta"
             win.setContentSize(NSSize(width: 760, height: 680))
             win.styleMask.insert(.resizable)
             win.center()
@@ -177,9 +177,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleDisplayMode() {
-        let current = UserDefaults.standard.string(forKey: "MeetingPilot.displayMode") ?? DisplayMode.full.rawValue
+        let current = UserDefaults.standard.string(forKey: "Scripta.displayMode") ?? DisplayMode.full.rawValue
         let next: DisplayMode = (current == DisplayMode.minimal.rawValue) ? .full : .minimal
-        UserDefaults.standard.set(next.rawValue, forKey: "MeetingPilot.displayMode")
+        UserDefaults.standard.set(next.rawValue, forKey: "Scripta.displayMode")
         NotificationCenter.default.post(name: .displayModeChanged, object: next)
     }
 

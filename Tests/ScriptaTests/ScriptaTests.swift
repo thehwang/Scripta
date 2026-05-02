@@ -1,14 +1,14 @@
 import XCTest
-@testable import MeetingPilot
+@testable import Scripta
 
-final class MeetingPilotTests: XCTestCase {
+final class ScriptaTests: XCTestCase {
     func testScriptContentHasHeaders() {
         let content = ScriptExporter.makeScriptFileContent(
             startedAt: Date(timeIntervalSince1970: 0),
             endedAt: Date(timeIntervalSince1970: 10),
             transcript: "hello world"
         )
-        XCTAssertTrue(content.contains("Meeting Pilot Script"))
+        XCTAssertTrue(content.contains("Scripta Script"))
         XCTAssertTrue(content.contains("Transcript"))
         XCTAssertTrue(content.contains("hello world"))
     }

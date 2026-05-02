@@ -1,7 +1,7 @@
-APP=MeetingPilot
-ENTITLEMENTS=MeetingPilot.entitlements
+APP=Scripta
+ENTITLEMENTS=Scripta.entitlements
 INSTALL_DIR=/Applications
-CERT_NAME=MeetingPilot Dev
+CERT_NAME=Scripta Dev
 DEV_BUNDLE=build/$(APP).app
 
 .PHONY: build run install setup-cert test clean reset-permissions
@@ -29,7 +29,7 @@ run: setup-cert
 	if [ "$$NEW_HASH" != "$$OLD_HASH" ] || ! codesign --verify --deep --strict "$(DEV_BUNDLE)" 2>/dev/null; then \
 		echo "Binary changed — copying and signing ..."; \
 		cp "$$SRC_BIN" "$$DST_BIN"; \
-		cp "Sources/MeetingPilot/Info.plist" "$$CONTENTS_DIR/Info.plist"; \
+		cp "Sources/Scripta/Info.plist" "$$CONTENTS_DIR/Info.plist"; \
 		mkdir -p "$$CONTENTS_DIR/Resources"; \
 		if [ -f "Resources/AppIcon.icns" ]; then \
 			cp "Resources/AppIcon.icns" "$$CONTENTS_DIR/Resources/AppIcon.icns"; \
@@ -55,7 +55,7 @@ install: setup-cert
 	MACOS_DIR="$$CONTENTS_DIR/MacOS"; \
 	mkdir -p "$$MACOS_DIR"; \
 	cp "$$BIN_PATH/$(APP)" "$$MACOS_DIR/$(APP)"; \
-	cp "Sources/MeetingPilot/Info.plist" "$$CONTENTS_DIR/Info.plist"; \
+	cp "Sources/Scripta/Info.plist" "$$CONTENTS_DIR/Info.plist"; \
 	xattr -cr "$$APP_BUNDLE"; \
 	/usr/bin/codesign --force --sign "$(CERT_NAME)" \
 		--entitlements $(ENTITLEMENTS) \
@@ -78,10 +78,10 @@ deploy: setup-cert
 	rm -rf "$$DEPLOY_DIR"; \
 	mkdir -p "$$MACOS_DIR"; \
 	cp "$$BIN_PATH/$(APP)" "$$MACOS_DIR/$(APP)"; \
-	cp "Sources/MeetingPilot/Info.plist" "$$APP_DIR/Info.plist"; \
+	cp "Sources/Scripta/Info.plist" "$$APP_DIR/Info.plist"; \
 	xattr -cr "$$DEPLOY_DIR/$(APP).app"; \
 	/usr/bin/codesign --force --sign "$(CERT_NAME)" \
-		--entitlements MeetingPilot-deploy.entitlements \
+		--entitlements Scripta-deploy.entitlements \
 		--deep "$$DEPLOY_DIR/$(APP).app"; \
 	echo ""; \
 	echo "=== Deploy package ready ==="; \
@@ -109,4 +109,4 @@ reset-permissions:
 	@echo ""
 	@echo "TCC permissions reset. Re-launch the app to re-grant."
 	@echo "If Screen Recording doesn't work, add the app manually:"
-	@echo "  System Settings → Privacy & Security → Screen Recording → + → select MeetingPilot"
+	@echo "  System Settings → Privacy & Security → Screen Recording → + → select Scripta"

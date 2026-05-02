@@ -1,5 +1,5 @@
 import AVFoundation
-import MeetingPilotCore
+import ScriptaCore
 import Speech
 import SwiftUI
 
@@ -28,8 +28,8 @@ enum DisplayMode: String {
 }
 
 extension Notification.Name {
-    static let displayModeChanged = Notification.Name("MeetingPilot.displayModeChanged")
-    static let showMeetingHistory = Notification.Name("MeetingPilot.showMeetingHistory")
+    static let displayModeChanged = Notification.Name("Scripta.displayModeChanged")
+    static let showMeetingHistory = Notification.Name("Scripta.showMeetingHistory")
 }
 
 // MARK: - Main View
@@ -47,8 +47,8 @@ struct ContentView: View {
     @State private var showSummary = false
     @State private var showChatPanel = false
     @State private var showHistoryPanel = false
-    @AppStorage("MeetingPilot.displayMode") private var displayMode: String = DisplayMode.full.rawValue
-    @AppStorage("MeetingPilot.fontScale") private var fontScale: Double = 1.0
+    @AppStorage("Scripta.displayMode") private var displayMode: String = DisplayMode.full.rawValue
+    @AppStorage("Scripta.fontScale") private var fontScale: Double = 1.0
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -299,7 +299,7 @@ struct ContentView: View {
 
     private var topBar: some View {
         HStack(spacing: 0) {
-            Text("Meeting Pilot")
+            Text("Scripta")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(.white)
 

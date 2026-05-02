@@ -1,5 +1,5 @@
 import Foundation
-import MeetingPilotCore
+import ScriptaCore
 
 struct SessionMetadata: Codable {
     let date: Date
@@ -42,7 +42,7 @@ final class MeetingStore: ObservableObject {
     init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents")
-        self.baseDir = docs.appendingPathComponent("MeetingPilotScripts", isDirectory: true)
+        self.baseDir = docs.appendingPathComponent("ScriptaScripts", isDirectory: true)
     }
 
     func loadSessions() {
