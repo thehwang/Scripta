@@ -1,95 +1,149 @@
-# Meeting Pilot
+<p align="center">
+  <img src="build/AppIcon.iconset/icon_256x256.png" width="128" alt="MeetingPilot icon">
+</p>
 
-macOS native meeting transcription app with dual-channel audio capture and speaker diarization.
+<h1 align="center">Meeting Pilot</h1>
+
+<p align="center">
+  <strong>Privacy-first meeting transcription & AI summary for macOS</strong>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#installation">Installation</a> •
+  <a href="#requirements">Requirements</a> •
+  <a href="#building-from-source">Build</a> •
+  <a href="#license">License</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/swift-5.9-orange" alt="Swift 5.9">
+  <img src="https://img.shields.io/badge/AI-Ollama-green" alt="Ollama">
+  <img src="https://img.shields.io/github/license/thehwang/MeetingPilot" alt="MIT License">
+</p>
+
+---
+
+Meeting Pilot is a native macOS app that captures **both your microphone and system audio** during meetings, transcribes them in real-time using Apple's on-device speech recognition, and generates AI-powered summaries — all running **100% locally** on your Mac. No cloud. No subscriptions. No data leaves your machine.
 
 ## Features
 
-- Dual-channel real-time transcription: Microphone ("You") + System Audio ("Remote")
-- On-device speech recognition via Apple `SFSpeechRecognizer` (no cloud API needed)
-- Post-recording speaker diarization using MFCC + YIN pitch + agglomerative clustering
-- System audio capture via `ScreenCaptureKit` (captures Zoom, Teams, Meet, etc.)
-- Auto-export transcript to `~/Documents/MeetingPilotScripts/`
-- Menu bar app with live transcript display
+**Real-time Transcription**
+- Dual-channel capture: your mic ("You") + system audio ("Remote")
+- On-device speech recognition via `SFSpeechRecognizer`
+- Supports 10+ languages (English, Chinese, Japanese, Korean, Spanish, French, German, and more)
+
+**AI-Powered Summaries**
+- Local AI summaries powered by [Ollama](https://ollama.com)
+- Streaming responses displayed in real-time
+- Key points + action items extraction
+
+**AI Chat Panel**
+- Ask questions about your meeting transcript
+- Multi-turn conversation with context
+- Works during recording or on past meetings
+
+**Live Translation** *(macOS 15+)*
+- Real-time bilingual transcript using Apple Translation framework
+- Context-aware translation for improved quality
+
+**Meeting History**
+- Browse and search all past sessions
+- View transcripts, summaries, and re-generate with AI
+- Sessions saved to `~/Documents/MeetingPilotScripts/`
+
+**Two Display Modes**
+- **Full mode**: complete UI with transcript, summary, controls
+- **Minimal mode**: floating live captions bar — stays on top while you work
+
+**Privacy by Design**
+- All processing happens on your Mac
+- No internet connection required (except for Ollama model download)
+- No account, no telemetry, no tracking
+
+## Installation
+
+### Quick Install (recommended)
+
+Download the latest release from the [Releases](https://github.com/thehwang/MeetingPilot/releases) page and run:
+
+```bash
+cd ~/Downloads/MeetingPilot
+chmod +x install.sh
+./install.sh
+```
+
+The install script will:
+- Copy `MeetingPilot.app` to `/Applications`
+- Install [Ollama](https://ollama.com) via Homebrew (if not already installed)
+- Start Ollama as a background service
+- Pull the default AI model (`qwen2.5:3b`)
+
+### Manual Install
+
+1. Download and move `MeetingPilot.app` to `/Applications`
+2. Install Ollama: `brew install ollama && brew services start ollama`
+3. Pull a model: `ollama pull qwen2.5:3b`
+4. Launch Meeting Pilot
 
 ## Requirements
 
-- macOS 14.0 (Sonoma) or later
-- Apple Silicon or Intel Mac
-- Xcode Command Line Tools (`xcode-select --install`)
-- Permissions: Microphone, Speech Recognition, Screen Recording
+| Component | Requirement |
+|-----------|------------|
+| macOS | 14.0 (Sonoma) or later |
+| Chip | Apple Silicon (M1/M2/M3/M4) or Intel |
+| Ollama | Required for AI summaries and chat |
+| Disk | ~2GB for AI model |
+| Translation | macOS 15+ (Sequoia) for live translation |
 
-## Install
+## Building from Source
 
 ```bash
-git clone git@github.com:hwang-cadent/MeetingPilot.git
+git clone https://github.com/thehwang/MeetingPilot.git
 cd MeetingPilot
-make install
+make run
 ```
 
-`make install` will automatically:
-1. Create a local self-signed code signing certificate (first time only)
-2. Build a release binary
-3. Package and sign as `MeetingPilot.app`
-4. Install to `/Applications/`
+This will build the app with Swift Package Manager, sign it with an ad-hoc certificate, and launch it.
 
-On first launch, grant Microphone and Screen Recording permissions when prompted.
-
-## Development
-
-```bash
-make build    # Build debug binary
-make run      # Build, package, sign, and launch (debug)
-make clean    # Remove build artifacts
-```
-
-## Architecture
+### Project Structure
 
 ```
-Sources/
-  MeetingPilotCore/    # Shared library
-    TranscriptEntry.swift
-    SpeakerDiarizer.swift
-    Logging.swift
-  MeetingPilot/        # Main app
-    main.swift
-    AppDelegate.swift
-    ContentView.swift
-    MeetingRecorder.swift
-    SystemAudioCapture.swift
-    ScriptExporter.swift
-  DiarizeTest/         # CLI tool for diarization testing
-    main.swift
-Tests/
-  test_diarizer.sh     # Automated diarization test script
-  generate_test_audio.py
-  compare_results.py
+MeetingPilot/
+├── Sources/
+│   ├── MeetingPilot/         # Main app
+│   │   ├── AppDelegate.swift
+│   │   ├── ContentView.swift       # Main UI (full + minimal modes)
+│   │   ├── MeetingRecorder.swift    # Recording orchestration
+│   │   ├── SystemAudioCapture.swift # ScreenCaptureKit audio
+│   │   ├── SummaryService.swift     # Ollama AI integration
+│   │   ├── ChatPanel.swift          # AI Q&A sidebar
+│   │   ├── HistoryPanel.swift       # Meeting history browser
+│   │   ├── TranslationService.swift # Apple Translation wrapper
+│   │   └── ...
+│   └── MeetingPilotCore/     # Shared types
+├── Resources/
+│   └── AppIcon.icns
+├── Makefile
+└── Package.swift
 ```
 
-## How It Works
+## Permissions
 
-1. **Recording**: Captures microphone (your voice) and system audio (remote participants) simultaneously
-2. **Real-time transcription**: Both channels are transcribed independently using on-device `SFSpeechRecognizer`
-3. **Speaker diarization**: After recording stops, the system audio is analyzed to identify different remote speakers using:
-   - Energy-based Voice Activity Detection (VAD)
-   - Spectral change-point detection
-   - MFCC + Delta-MFCC feature extraction
-   - YIN pitch estimation
-   - Agglomerative hierarchical clustering with adaptive threshold
-4. **Export**: Final transcript with speaker labels is saved as Markdown
+Meeting Pilot requires the following macOS permissions (prompted on first launch):
 
-## Testing
-
-```bash
-# Automated test with macOS TTS voices
-cd Tests && ./test_diarizer.sh
-
-# Test with a local WAV file
-./test_diarizer.sh recording.wav
-
-# Test with YouTube video (requires yt-dlp)
-./test_diarizer.sh "https://youtube.com/watch?v=..."
-```
+- **Microphone** — to capture your voice
+- **Screen Recording** — to capture system/meeting audio via ScreenCaptureKit
+- **Speech Recognition** — for on-device transcription
+- **Accessibility** — for enhanced speech recognition (optional)
 
 ## License
 
-Private — All rights reserved.
+[MIT](LICENSE) — free for personal and commercial use.
+
+---
+
+<p align="center">
+  Made with ❤️ on a Mac
+</p>
