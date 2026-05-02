@@ -26,7 +26,7 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
     var onError: ((Error) -> Void)?
 
     private var stream: SCStream?
-    private let sampleQueue = DispatchQueue(label: "meetingpilot.system-audio.sample")
+    private let sampleQueue = DispatchQueue(label: "scripta.system-audio.sample")
 
     /// Best-effort screen recording permission check.
     /// NOTE: CGPreflightScreenCaptureAccess is unreliable for self-signed

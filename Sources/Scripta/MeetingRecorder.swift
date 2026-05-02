@@ -50,8 +50,8 @@ final class MeetingRecorder: NSObject, ObservableObject {
     private let audioEngine = AVAudioEngine()
     private var speechRecognizer: SFSpeechRecognizer?
     private let systemAudioCapture = SystemAudioCapture()
-    private let systemAppendQueue = DispatchQueue(label: "meetingpilot.system-audio-append")
-    private let audioWriteQueue = DispatchQueue(label: "meetingpilot.audio-write")
+    private let systemAppendQueue = DispatchQueue(label: "scripta.system-audio-append")
+    private let audioWriteQueue = DispatchQueue(label: "scripta.audio-write")
     private let recognitionFormat = AVAudioFormat(
         commonFormat: .pcmFormatFloat32,
         sampleRate: 16_000,

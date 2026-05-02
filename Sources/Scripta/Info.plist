@@ -13,7 +13,7 @@
     <key>CFBundleDisplayName</key>
     <string>Scripta</string>
     <key>CFBundleIdentifier</key>
-    <string>com.hwang.meetingpilot</string>
+    <string>com.thehwang.scripta</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleIconFile</key>

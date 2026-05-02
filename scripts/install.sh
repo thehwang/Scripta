@@ -5,7 +5,7 @@
 set -e
 
 APP="Scripta"
-BUNDLE_ID="com.hwang.meetingpilot"
+BUNDLE_ID="com.thehwang.scripta"
 INSTALL_DIR="/Applications"
 APP_PATH="$INSTALL_DIR/$APP.app"
 
