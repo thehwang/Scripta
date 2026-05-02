@@ -138,6 +138,12 @@ Scripta requires the following macOS permissions (prompted on first launch):
 - **Speech Recognition** — for on-device transcription
 - **Accessibility** — for enhanced speech recognition (optional)
 
+## Legal Notice
+
+> **Recording Disclaimer:** Recording conversations may be subject to local, state, or national consent laws. Many jurisdictions (including parts of the United States, Canada, and the European Union) require **all participants** to be informed and to consent before a conversation is recorded. **You are solely responsible for complying with all applicable laws when using this software.** Scripta does not record by default — recording is explicitly initiated by the user. The developers of Scripta assume no liability for misuse or non-compliance with recording consent laws.
+
+> **Privacy:** Scripta processes all audio and transcription data **entirely on your device**. No audio, transcript, or personal data is transmitted to any external server. AI summaries are generated locally via [Ollama](https://ollama.com). The only network activity is the one-time download of the AI model.
+
 ## License
 
 [MIT](LICENSE) — free for personal and commercial use.
