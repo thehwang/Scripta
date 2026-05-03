@@ -93,6 +93,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
+        menu.addItem(withTitle: "About Scripta", action: #selector(showAbout), keyEquivalent: "")
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Open Scripta", action: #selector(openMainWindow), keyEquivalent: "o")
         menu.addItem(withTitle: "Start/Stop Recording", action: #selector(toggleRecording), keyEquivalent: "r")
         menu.addItem(.separator())
@@ -166,6 +168,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window = win
         }
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func showAbout() {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        NSApplication.shared.orderFrontStandardAboutPanel(options: [
+            .applicationName: "Scripta",
+            .applicationVersion: version,
+            .version: build,
+            .credits: NSAttributedString(
+                string: "Privacy-first meeting transcription & AI summary.\n100% local. No cloud. No subscriptions.\n\ngithub.com/thehwang/Scripta",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 11),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                    .paragraphStyle: {
+                        let p = NSMutableParagraphStyle()
+                        p.alignment = .center
+                        return p
+                    }()
+                ]
+            ),
+            NSApplication.AboutPanelOptionKey(rawValue: "Copyright"): "© 2026 thehwang. MIT License."
+        ])
     }
 
     @objc private func openMainWindow() {

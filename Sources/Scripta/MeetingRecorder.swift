@@ -83,6 +83,9 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
     private var micTaskProducedResult = false
     private var systemTaskProducedResult = false
+    private var micRetryCount = 0
+    private var systemRetryCount = 0
+    private static let maxRetries = 5
 
     private static let commitTimeSec: TimeInterval = 10
     private static let commitChars = 200
@@ -163,6 +166,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         activeMicIdx = nil; activeSystemIdx = nil
         activeMicStart = nil; activeSystemStart = nil
         micTaskProducedResult = false; systemTaskProducedResult = false
+        micRetryCount = 0; systemRetryCount = 0
         micTask?.cancel(); micTask = nil; micRequest = nil
         systemTask?.cancel(); systemTask = nil; systemRequest = nil
         systemAudioConverter = nil
@@ -389,8 +393,8 @@ final class MeetingRecorder: NSObject, ObservableObject {
             let isMic = speaker == "You"
 
             if let result {
-                if isMic { self.micTaskProducedResult = true }
-                else { self.systemTaskProducedResult = true }
+                if isMic { self.micTaskProducedResult = true; self.micRetryCount = 0 }
+                else { self.systemTaskProducedResult = true; self.systemRetryCount = 0 }
 
                 let text = result.bestTranscription.formattedString
                 mplog("[\(speaker)] result (isFinal=\(result.isFinal)) len=\(text.count): \(String(text.prefix(80)))")
@@ -415,7 +419,19 @@ final class MeetingRecorder: NSObject, ObservableObject {
                     mplog("[\(speaker)] task had results → restart")
                     self.handleTaskFinished(speaker: speaker, willRestart: true)
                 } else if self.state == .recording {
-                    mplog("[\(speaker)] task had NO results → skip restart")
+                    let retryCount = isMic ? self.micRetryCount : self.systemRetryCount
+                    if retryCount < Self.maxRetries {
+                        if isMic { self.micRetryCount += 1 } else { self.systemRetryCount += 1 }
+                        let delay = Double(retryCount + 1) * 0.5
+                        mplog("[\(speaker)] task had NO results → retry #\(retryCount + 1) in \(delay)s")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                            guard let self, self.state == .recording else { return }
+                            self.restartRecognitionTask(speaker: speaker)
+                        }
+                    } else {
+                        mplog("[\(speaker)] task had NO results → max retries reached, giving up")
+                        self.statusMessage = "\(speaker) channel: speech recognition not responding. Check System Settings → Keyboard → Dictation to ensure the \(self.recognitionLanguage) model is downloaded."
+                    }
                 } else if self.state == .transcribing {
                     self.handleTaskFinished(speaker: speaker, willRestart: false)
                 }

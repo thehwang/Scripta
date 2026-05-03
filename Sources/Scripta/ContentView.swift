@@ -321,6 +321,12 @@ struct ContentView: View {
             Text("Scripta")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(.white)
+            if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+                Text("v\(version)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.textMuted)
+                    .padding(.leading, 4)
+            }
 
             Divider().frame(height: 14).padding(.horizontal, 12)
 
