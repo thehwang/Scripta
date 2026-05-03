@@ -16,3 +16,6 @@ Tests/test_data/
 # IDE
 .vscode/
 .idea/
+
+# Personal files
+launch-plan.html
