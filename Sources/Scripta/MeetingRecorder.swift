@@ -85,7 +85,8 @@ final class MeetingRecorder: NSObject, ObservableObject {
     private var systemTaskProducedResult = false
     private var micRetryCount = 0
     private var systemRetryCount = 0
-    private static let maxRetries = 5
+    private var micBufferCount = 0
+    private static let maxRetries = 8
 
     private static let commitTimeSec: TimeInterval = 10
     private static let commitChars = 200
@@ -105,15 +106,17 @@ final class MeetingRecorder: NSObject, ObservableObject {
             try await ensurePermissions()
             mplog("startRecording: permissions OK")
 
-            try await beginAppleSpeechPipeline()
-
-            startAudioWriters()
             recordingStartedAt = Date()
             recordingEndedAt = nil
             state = .recording
             statusMessage = "Recording — dual channel (You + Remote)..."
+
+            try await beginAppleSpeechPipeline()
+
+            startAudioWriters()
             mplog("startRecording: pipeline started, state = recording")
         } catch let error as SystemAudioCapture.CaptureError where error == .permissionDenied {
+            recordingStartedAt = nil
             state = .idle
             statusMessage = "Screen Recording permission required. Open System Settings → Privacy & Security → Screen Recording → add Scripta."
             lastError = error.localizedDescription
@@ -123,6 +126,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
             }
         } catch {
             mplog("startRecording FAILED: \(error.localizedDescription)")
+            recordingStartedAt = nil
             state = .idle
             lastError = error.localizedDescription
             statusMessage = error.localizedDescription
@@ -166,7 +170,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         activeMicIdx = nil; activeSystemIdx = nil
         activeMicStart = nil; activeSystemStart = nil
         micTaskProducedResult = false; systemTaskProducedResult = false
-        micRetryCount = 0; systemRetryCount = 0
+        micRetryCount = 0; systemRetryCount = 0; micBufferCount = 0
         micTask?.cancel(); micTask = nil; micRequest = nil
         systemTask?.cancel(); systemTask = nil; systemRequest = nil
         systemAudioConverter = nil
@@ -347,8 +351,13 @@ final class MeetingRecorder: NSObject, ObservableObject {
             mplog("Trying tap strategy: \(label) → format=\(tapFormat?.description ?? "nil")")
             do {
                 inputNode.installTap(onBus: 0, bufferSize: 4096, format: tapFormat) { [weak self] buffer, _ in
-                    self?.micRequest?.append(buffer)
-                    self?.writeMicAudio(buffer)
+                    guard let self else { return }
+                    self.micRequest?.append(buffer)
+                    self.writeMicAudio(buffer)
+                    self.micBufferCount += 1
+                    if self.micBufferCount == 1 || self.micBufferCount == 10 || self.micBufferCount == 50 {
+                        mplog("Mic tap: buffer #\(self.micBufferCount) frames=\(buffer.frameLength) rate=\(buffer.format.sampleRate)")
+                    }
                 }
                 audioEngine.prepare()
                 try audioEngine.start()
@@ -407,7 +416,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
             if let error {
                 let desc = error.localizedDescription
-                mplog("[\(speaker)] error: \(desc)")
+                mplog("[\(speaker)] error: \(desc) (state=\(self.state.rawValue), micBufs=\(self.micBufferCount))")
                 let produced = isMic ? self.micTaskProducedResult : self.systemTaskProducedResult
 
                 if desc.contains("access assets") || desc.contains("not available") {
