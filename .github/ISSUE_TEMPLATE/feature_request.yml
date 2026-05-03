@@ -1,0 +1,64 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make Scripta better? We'd love to hear it. Focus on the problem or use case — we can figure out the implementation together.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case or pain point.
+      placeholder: "I often need to share meeting notes with my team, but currently I have to manually copy text from the transcript file."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How do you imagine this working? (optional — the "why" is more important than the "how")
+      placeholder: "Add an 'Export as PDF' button that generates a formatted document with the transcript, summary, and action items."
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feature area
+      options:
+        - Transcription (speech-to-text)
+        - AI Summary / Chat
+        - Translation
+        - UI / Display
+        - Export / Sharing
+        - Meeting History
+        - Installation / Setup
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: willingness
+    attributes:
+      label: Would you be willing to contribute this?
+      description: No pressure — just helps us prioritize.
+      options:
+        - "Yes, I'd like to submit a PR"
+        - "Maybe, with some guidance"
+        - "No, just suggesting"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you tried any workarounds? Are there other tools that do this well?
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Screenshots, mockups, links, or anything else.

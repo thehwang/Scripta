@@ -13,6 +13,7 @@
   <a href="#installation">Installation</a> •
   <a href="#requirements">Requirements</a> •
   <a href="#building-from-source">Build</a> •
+  <a href="CONTRIBUTING.md">Contributing</a> •
   <a href="#license">License</a>
 </p>
 

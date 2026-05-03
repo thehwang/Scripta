@@ -104,8 +104,8 @@ clean:
 	rm -rf .build build
 
 reset-permissions:
-	tccutil reset ScreenCapture com.hwang.meetingpilot
-	tccutil reset Microphone com.hwang.meetingpilot
+	tccutil reset ScreenCapture com.thehwang.scripta
+	tccutil reset Microphone com.thehwang.scripta
 	@echo ""
 	@echo "TCC permissions reset. Re-launch the app to re-grant."
 	@echo "If Screen Recording doesn't work, add the app manually:"
