@@ -86,7 +86,9 @@ final class MeetingRecorder: NSObject, ObservableObject {
     private var micRetryCount = 0
     private var systemRetryCount = 0
     private var micBufferCount = 0
-    private static let maxRetries = 8
+    private var systemBufferCount = 0
+    private static let maxMicRetries = 10
+    private static let maxSystemRetries = 120
 
     private static let commitTimeSec: TimeInterval = 10
     private static let commitChars = 200
@@ -170,7 +172,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         activeMicIdx = nil; activeSystemIdx = nil
         activeMicStart = nil; activeSystemStart = nil
         micTaskProducedResult = false; systemTaskProducedResult = false
-        micRetryCount = 0; systemRetryCount = 0; micBufferCount = 0
+        micRetryCount = 0; systemRetryCount = 0; micBufferCount = 0; systemBufferCount = 0
         micTask?.cancel(); micTask = nil; micRequest = nil
         systemTask?.cancel(); systemTask = nil; systemRequest = nil
         systemAudioConverter = nil
@@ -429,10 +431,11 @@ final class MeetingRecorder: NSObject, ObservableObject {
                     self.handleTaskFinished(speaker: speaker, willRestart: true)
                 } else if self.state == .recording {
                     let retryCount = isMic ? self.micRetryCount : self.systemRetryCount
-                    if retryCount < Self.maxRetries {
+                    let maxRetries = isMic ? Self.maxMicRetries : Self.maxSystemRetries
+                    if retryCount < maxRetries {
                         if isMic { self.micRetryCount += 1 } else { self.systemRetryCount += 1 }
-                        let delay = Double(retryCount + 1) * 0.5
-                        mplog("[\(speaker)] task had NO results → retry #\(retryCount + 1) in \(delay)s")
+                        let delay = isMic ? min(Double(retryCount + 1) * 0.5, 3.0) : min(Double(retryCount + 1) * 0.3, 2.0)
+                        mplog("[\(speaker)] task had NO results → retry #\(retryCount + 1) in \(delay)s (sysBufs=\(self.systemBufferCount))")
                         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                             guard let self, self.state == .recording else { return }
                             self.restartRecognitionTask(speaker: speaker)
@@ -585,6 +588,11 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
     private func appendSystemAudioToRequest(_ sampleBuffer: CMSampleBuffer) {
         guard let pcm = Self.pcmBuffer(from: sampleBuffer) else { return }
+
+        systemBufferCount += 1
+        if systemBufferCount == 1 || systemBufferCount == 10 || systemBufferCount == 100 {
+            mplog("System audio: buffer #\(systemBufferCount) frames=\(pcm.frameLength) rate=\(pcm.format.sampleRate) ch=\(pcm.format.channelCount) fmt=\(pcm.format.commonFormat.rawValue)")
+        }
 
         let buffer: AVAudioPCMBuffer
         if pcm.format.sampleRate == recognitionFormat.sampleRate &&
