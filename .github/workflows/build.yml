@@ -128,18 +128,11 @@ jobs:
             | `Scripta-macos15.zip` | macOS 15+ | Yes (Apple Translation) |
             | `Scripta-macos14.zip` | macOS 14+ | No |
 
-            ### Install (one command):
+            ### One-line install:
             ```bash
-            unzip Scripta-macos15.zip && bash install.sh
+            curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh | bash
             ```
+            Auto-detects your macOS version, downloads the right zip, installs app + Ollama + AI model, and launches.
 
-            The install script handles everything: copy to /Applications, clear quarantine,
-            reset permissions, and launch the app. Grant Microphone + Screen Recording when prompted.
-
-            ### AI Summary (optional)
-            AI summaries now use **Ollama** (local LLM server). Install Ollama separately:
-            ```bash
-            brew install ollama && ollama serve
-            ollama pull qwen2.5:3b
-            ```
-            Or download from https://ollama.com. No data leaves your Mac.
+            ### Or install manually:
+            Download the zip above, then `unzip` and `bash install.sh`.

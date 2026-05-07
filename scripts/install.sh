@@ -1,19 +1,26 @@
 #!/bin/bash
-# Scripta Installer Script
-# Usage: curl -sL <url>/install.sh | bash
-#   or:  bash install.sh Scripta-macos15.zip
+# Scripta Installer
+#
+# One-line install:
+#   curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh | bash
+#
+# Or run locally:
+#   bash install.sh                       (auto-download latest release)
+#   bash install.sh Scripta-macos15.zip   (use local zip)
 set -e
 
 APP="Scripta"
 BUNDLE_ID="com.thehwang.scripta"
 INSTALL_DIR="/Applications"
 APP_PATH="$INSTALL_DIR/$APP.app"
+REPO="thehwang/Scripta"
+TMPDIR_INSTALL="${TMPDIR:-/tmp}/scripta-install-$$"
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -21,77 +28,113 @@ ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 fail()  { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
+cleanup() { rm -rf "$TMPDIR_INSTALL"; }
+trap cleanup EXIT
+
 echo ""
-echo "╔══════════════════════════════════════╗"
-echo "║    Scripta Installer            ║"
-echo "╚══════════════════════════════════════╝"
+echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
+echo -e "${BOLD}║         Scripta Installer            ║${NC}"
+echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
 echo ""
 
-# Detect macOS version
+# ── Detect macOS ─────────────────────────────────────────────────────
 MACOS_VER=$(sw_vers -productVersion)
 MACOS_MAJOR=$(echo "$MACOS_VER" | cut -d. -f1)
 info "Detected macOS $MACOS_VER"
 
-# Locate Scripta.app — either next to script or find zip to extract
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SOURCE_APP="$SCRIPT_DIR/$APP.app"
-
-if [ ! -d "$SOURCE_APP" ]; then
-    # Look for zip file next to script or passed as argument
-    ZIP_FILE=""
-    if [ -n "$1" ] && [ -f "$1" ]; then
-        ZIP_FILE="$1"
-    else
-        ZIP_FILE=$(find "$SCRIPT_DIR" -maxdepth 1 -name "$APP*.zip" | head -1)
-        [ -z "$ZIP_FILE" ] && ZIP_FILE=$(find "$(pwd)" -maxdepth 1 -name "$APP*.zip" | head -1)
-    fi
-
-    if [ -n "$ZIP_FILE" ] && [ -f "$ZIP_FILE" ]; then
-        info "Extracting $ZIP_FILE ..."
-        unzip -qo "$ZIP_FILE" -d "$SCRIPT_DIR"
-        SOURCE_APP=$(find "$SCRIPT_DIR" -name "$APP.app" -maxdepth 2 -type d | head -1)
-    fi
-
-    if [ ! -d "$SOURCE_APP" ]; then
-        fail "$APP.app not found. Place this script next to $APP.app or a $APP*.zip file."
-    fi
+if [ "$MACOS_MAJOR" -lt 14 ]; then
+    fail "Scripta requires macOS 14 (Sonoma) or later. You have macOS $MACOS_VER."
 fi
 
-# Stop existing instance
+# ── Locate or download Scripta.app ───────────────────────────────────
+find_app() {
+    local dir="$1"
+    [ -d "$dir/$APP.app" ] && echo "$dir/$APP.app" && return
+    local zip=$(find "$dir" -maxdepth 1 -name "$APP*.zip" 2>/dev/null | head -1)
+    if [ -n "$zip" ]; then
+        info "Extracting $(basename "$zip") ..."
+        unzip -qo "$zip" -d "$dir"
+        local found=$(find "$dir" -maxdepth 2 -name "$APP.app" -type d | head -1)
+        [ -n "$found" ] && echo "$found" && return
+    fi
+    return 1
+}
+
+SOURCE_APP=""
+
+if [ -n "$1" ] && [ -f "$1" ]; then
+    mkdir -p "$TMPDIR_INSTALL"
+    info "Using local file: $1"
+    cp "$1" "$TMPDIR_INSTALL/"
+    SOURCE_APP=$(find_app "$TMPDIR_INSTALL") || true
+elif [ -n "$1" ] && [ -d "$1" ]; then
+    SOURCE_APP="$1"
+fi
+
+if [ -z "$SOURCE_APP" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+    SOURCE_APP=$(find_app "$SCRIPT_DIR") || true
+fi
+
+if [ -z "$SOURCE_APP" ]; then
+    SOURCE_APP=$(find_app "$(pwd)") || true
+fi
+
+if [ -z "$SOURCE_APP" ]; then
+    info "Downloading latest release from GitHub..."
+    mkdir -p "$TMPDIR_INSTALL"
+
+    ASSET_NAME="Scripta-macos${MACOS_MAJOR}.zip"
+    DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/$ASSET_NAME"
+
+    info "Trying $ASSET_NAME ..."
+    if ! curl -fSL --progress-bar -o "$TMPDIR_INSTALL/$ASSET_NAME" "$DOWNLOAD_URL" 2>&1; then
+        if [ "$MACOS_MAJOR" -ge 15 ]; then
+            ASSET_NAME="Scripta-macos15.zip"
+        else
+            ASSET_NAME="Scripta-macos14.zip"
+        fi
+        DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/$ASSET_NAME"
+        info "Retrying with $ASSET_NAME ..."
+        curl -fSL --progress-bar -o "$TMPDIR_INSTALL/$ASSET_NAME" "$DOWNLOAD_URL" \
+            || fail "Download failed. Check https://github.com/$REPO/releases for available files."
+    fi
+
+    ok "Downloaded $ASSET_NAME"
+    SOURCE_APP=$(find_app "$TMPDIR_INSTALL") \
+        || fail "Could not find $APP.app in downloaded archive."
+fi
+
+info "Source: $SOURCE_APP"
+
+# ── Install ──────────────────────────────────────────────────────────
 if pgrep -x "$APP" >/dev/null 2>&1; then
     info "Stopping running $APP..."
     killall "$APP" 2>/dev/null || true
     sleep 1
 fi
 
-# Remove old installation
 if [ -d "$APP_PATH" ]; then
     info "Removing old installation..."
     rm -rf "$APP_PATH"
 fi
 
-# Install
 info "Installing to $INSTALL_DIR..."
 cp -R "$SOURCE_APP" "$APP_PATH"
 
-# Clear quarantine
-info "Clearing quarantine attributes..."
 xattr -cr "$APP_PATH"
 
-# Reset TCC permissions for clean slate
 info "Resetting permissions for clean authorization..."
 tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true
 tccutil reset Microphone "$BUNDLE_ID" 2>/dev/null || true
 
-# Clear icon cache
 touch "$APP_PATH"
 killall Dock 2>/dev/null || true
 
 ok "Installed to $APP_PATH"
 echo ""
 
-# ── Ollama (AI Summary) ──────────────────────────────────────────────
-
+# ── Ollama (AI Summary) ─────────────────────────────────────────────
 DEFAULT_MODEL="qwen2.5:3b"
 
 install_ollama() {
@@ -126,17 +169,16 @@ start_ollama_service() {
         info "Setting Ollama to start automatically..."
         brew services start ollama
         sleep 2
-        if curl -s http://localhost:11434/ >/dev/null 2>&1; then
-            ok "Ollama service started and running"
-        else
-            info "Waiting for Ollama to start..."
-            sleep 3
+        local retries=0
+        while [ $retries -lt 5 ]; do
             if curl -s http://localhost:11434/ >/dev/null 2>&1; then
                 ok "Ollama service is running"
-            else
-                warn "Ollama may need a moment to start. It will be ready when you open the app."
+                return
             fi
-        fi
+            retries=$((retries + 1))
+            sleep 1
+        done
+        warn "Ollama may need a moment to start. It will be ready when you open the app."
     fi
 }
 
@@ -169,7 +211,7 @@ else
     echo ""
 fi
 
-# macOS version specific notes
+# ── macOS version notes ──────────────────────────────────────────────
 if [ "$MACOS_MAJOR" -ge 15 ]; then
     warn "macOS 15 requires manual permission grants:"
     echo "  After launching, grant these in System Settings:"
@@ -183,22 +225,22 @@ if [ "$MACOS_MAJOR" -ge 15 ]; then
     echo ""
 fi
 
-# Launch
+# ── Launch ───────────────────────────────────────────────────────────
 info "Launching $APP..."
 open "$APP_PATH"
 
 echo ""
-echo "╔══════════════════════════════════════╗"
-echo "║  Installation complete!              ║"
-echo "║                                      ║"
-echo "║  Grant permissions when prompted.    ║"
-echo "║  If Screen Recording fails, quit     ║"
-echo "║  and reopen after granting.          ║"
-echo "║                                      ║"
+echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
+echo -e "${BOLD}║  Installation complete!              ║${NC}"
+echo -e "${BOLD}║                                      ║${NC}"
+echo -e "${BOLD}║  Grant permissions when prompted.    ║${NC}"
+echo -e "${BOLD}║  If Screen Recording fails, quit     ║${NC}"
+echo -e "${BOLD}║  and reopen after granting.          ║${NC}"
+echo -e "${BOLD}║                                      ║${NC}"
 if command -v ollama >/dev/null 2>&1; then
-echo "║  AI Summary: Ollama ready            ║"
+echo -e "${BOLD}║  AI Summary: Ollama ready            ║${NC}"
 else
-echo "║  AI Summary: install Ollama to use   ║"
+echo -e "${BOLD}║  AI Summary: install Ollama to use   ║${NC}"
 fi
-echo "╚══════════════════════════════════════╝"
+echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
 echo ""

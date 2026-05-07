@@ -65,21 +65,19 @@ Scripta is a native macOS app that captures **both your microphone and system au
 
 ## Installation
 
-### Quick Install (recommended)
-
-Download the latest release from the [Releases](https://github.com/thehwang/Scripta/releases) page and run:
+### One-Line Install (recommended)
 
 ```bash
-cd ~/Downloads/Scripta
-chmod +x install.sh
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh | bash
 ```
 
-The install script will:
-- Copy `Scripta.app` to `/Applications`
+This single command will:
+- Download the latest release for your macOS version
+- Install `Scripta.app` to `/Applications`
 - Install [Ollama](https://ollama.com) via Homebrew (if not already installed)
 - Start Ollama as a background service
 - Pull the default AI model (`qwen2.5:3b`)
+- Launch Scripta
 
 ### Manual Install
 
