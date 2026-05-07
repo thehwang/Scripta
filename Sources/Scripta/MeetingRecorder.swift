@@ -48,7 +48,8 @@ final class MeetingRecorder: NSObject, ObservableObject {
     ]
 
     private let audioEngine = AVAudioEngine()
-    private var speechRecognizer: SFSpeechRecognizer?
+    private var micSpeechRecognizer: SFSpeechRecognizer?
+    private var systemSpeechRecognizer: SFSpeechRecognizer?
     private let systemAudioCapture = SystemAudioCapture()
     private let systemAppendQueue = DispatchQueue(label: "scripta.system-audio-append")
     private let audioWriteQueue = DispatchQueue(label: "scripta.audio-write")
@@ -100,8 +101,10 @@ final class MeetingRecorder: NSObject, ObservableObject {
         guard state != .recording else { return }
 
         clearPreviousResult()
-        speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: recognitionLanguage))
-        mplog("startRecording: using language = \(recognitionLanguage)")
+        let locale = Locale(identifier: recognitionLanguage)
+        micSpeechRecognizer = SFSpeechRecognizer(locale: locale)
+        systemSpeechRecognizer = SFSpeechRecognizer(locale: locale)
+        mplog("startRecording: using language = \(recognitionLanguage) (dual recognizer)")
 
         do {
             mplog("startRecording: requesting permissions...")
@@ -175,6 +178,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         micRetryCount = 0; systemRetryCount = 0; micBufferCount = 0; systemBufferCount = 0
         micTask?.cancel(); micTask = nil; micRequest = nil
         systemTask?.cancel(); systemTask = nil; systemRequest = nil
+        micSpeechRecognizer = nil; systemSpeechRecognizer = nil
         systemAudioConverter = nil
         micAudioFile = nil; systemAudioFile = nil
         writerMicConverter = nil
@@ -254,14 +258,18 @@ final class MeetingRecorder: NSObject, ObservableObject {
     // MARK: Apple Speech Pipeline
 
     private func beginAppleSpeechPipeline() async throws {
-        guard let speechRecognizer else {
+        guard let micSpeechRecognizer, let systemSpeechRecognizer else {
             throw NSError(domain: "Scripta", code: 3,
                           userInfo: [NSLocalizedDescriptionKey: "Speech recognizer could not be created for '\(recognitionLanguage)'."])
         }
-        if !speechRecognizer.isAvailable || !speechRecognizer.supportsOnDeviceRecognition {
-            let langName = Self.supportedRecognitionLanguages.first { $0.code == recognitionLanguage }?.name ?? recognitionLanguage
-            throw NSError(domain: "Scripta", code: 4,
-                          userInfo: [NSLocalizedDescriptionKey: "\(langName) speech model not downloaded. Go to System Settings → Keyboard → Dictation → Languages to download it."])
+
+        for (label, rec) in [("mic", micSpeechRecognizer), ("system", systemSpeechRecognizer)] {
+            if !rec.isAvailable || !rec.supportsOnDeviceRecognition {
+                let langName = Self.supportedRecognitionLanguages.first { $0.code == recognitionLanguage }?.name ?? recognitionLanguage
+                throw NSError(domain: "Scripta", code: 4,
+                              userInfo: [NSLocalizedDescriptionKey: "\(langName) speech model not downloaded. Go to System Settings → Keyboard → Dictation → Languages to download it."])
+            }
+            mplog("[\(label)] recognizer ready: available=\(rec.isAvailable) onDevice=\(rec.supportsOnDeviceRecognition)")
         }
 
         let micReq = SFSpeechAudioBufferRecognitionRequest()
@@ -272,9 +280,10 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
         try startAudioEngineWithRetry(request: micReq)
 
-        micTask = speechRecognizer.recognitionTask(with: micReq) { [weak self] result, error in
+        micTask = micSpeechRecognizer.recognitionTask(with: micReq) { [weak self] result, error in
             self?.handleRecognitionResult(result: result, error: error, speaker: "You")
         }
+        mplog("Apple Speech pipeline: mic recognition task created (dedicated recognizer)")
 
         let sysReq = SFSpeechAudioBufferRecognitionRequest()
         sysReq.shouldReportPartialResults = true
@@ -294,10 +303,10 @@ final class MeetingRecorder: NSObject, ObservableObject {
         try await systemAudioCapture.start()
         mplog("Apple Speech pipeline: system audio capture started")
 
-        systemTask = speechRecognizer.recognitionTask(with: sysReq) { [weak self] result, error in
+        systemTask = systemSpeechRecognizer.recognitionTask(with: sysReq) { [weak self] result, error in
             self?.handleRecognitionResult(result: result, error: error, speaker: "Remote")
         }
-        mplog("Apple Speech pipeline: both recognition tasks created")
+        mplog("Apple Speech pipeline: both recognition tasks created (separate recognizers)")
     }
 
     private func startAudioEngineWithRetry(request: SFSpeechAudioBufferRecognitionRequest) throws {
@@ -538,31 +547,33 @@ final class MeetingRecorder: NSObject, ObservableObject {
     }
 
     private func restartRecognitionTask(speaker: String) {
-        guard let speechRecognizer, speechRecognizer.isAvailable,
+        let isMic = speaker == "You"
+        let recognizer = isMic ? micSpeechRecognizer : systemSpeechRecognizer
+
+        guard let recognizer, recognizer.isAvailable,
               state == .recording else {
-            mplog("restartTask [\(speaker)] skipped")
+            mplog("restartTask [\(speaker)] skipped (recognizer=\(recognizer != nil), available=\(recognizer?.isAvailable ?? false))")
             return
         }
-        mplog("restartTask [\(speaker)] creating new task")
+        mplog("restartTask [\(speaker)] creating new task on dedicated recognizer")
 
         let newReq = SFSpeechAudioBufferRecognitionRequest()
         newReq.shouldReportPartialResults = true
         newReq.requiresOnDeviceRecognition = true
         newReq.addsPunctuation = true
 
-        let isMic = speaker == "You"
         setCommitted(0, isMic: isMic)
 
         if isMic {
             micTaskProducedResult = false
             micRequest = newReq
-            micTask = speechRecognizer.recognitionTask(with: newReq) { [weak self] result, error in
+            micTask = recognizer.recognitionTask(with: newReq) { [weak self] result, error in
                 self?.handleRecognitionResult(result: result, error: error, speaker: "You")
             }
         } else {
             systemTaskProducedResult = false
             systemRequest = newReq
-            systemTask = speechRecognizer.recognitionTask(with: newReq) { [weak self] result, error in
+            systemTask = recognizer.recognitionTask(with: newReq) { [weak self] result, error in
                 self?.handleRecognitionResult(result: result, error: error, speaker: "Remote")
             }
         }
