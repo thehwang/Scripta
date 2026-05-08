@@ -20,10 +20,15 @@ let package = Package(
             path: "Sources/ScriptaCore",
             swiftSettings: extraSwiftSettings
         ),
+        .systemLibrary(
+            name: "CWhisper",
+            path: "Sources/CWhisper/include"
+        ),
         .executableTarget(
             name: "Scripta",
             dependencies: [
                 "ScriptaCore",
+                "CWhisper",
             ],
             path: "Sources/Scripta",
             exclude: ["Info.plist"],
@@ -33,8 +38,14 @@ let package = Package(
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
-                    "-Xlinker", "Sources/Scripta/Info.plist"
-                ])
+                    "-Xlinker", "Sources/Scripta/Info.plist",
+                    "-LSources/CWhisper/lib",
+                    "-lwhisper",
+                ]),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalKit"),
+                .linkedLibrary("c++"),
             ]
         ),
     ]

@@ -22,3 +22,7 @@ launch-plan.html
 
 # Test data
 TestData/
+
+# Whisper vendor sources (built locally)
+vendor/
+Sources/CWhisper/lib/*.a

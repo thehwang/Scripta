@@ -51,8 +51,12 @@ struct ContentView: View {
     @AppStorage("Scripta.fontScale") private var fontScale: Double = 1.0
     @AppStorage("Scripta.recordingDisclaimerAccepted") private var disclaimerAccepted = false
     @State private var showRecordingDisclaimer = false
+    @State private var whisperModelState: WhisperModelState = WhisperEngine.isModelDownloaded ? .ready : .missing
+    @State private var whisperDownloadProgress: String = ""
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    enum WhisperModelState { case missing, downloading, ready, failed }
 
     private var isMinimal: Bool { displayMode == DisplayMode.minimal.rawValue }
 
@@ -129,6 +133,9 @@ struct ContentView: View {
                         }
                         if !summaryModelManager.isReady && recorder.state == .idle {
                             aiModelBanner.padding(.horizontal, 20).padding(.top, 16)
+                        }
+                        if whisperModelState != .ready && recorder.state == .idle {
+                            whisperModelBanner.padding(.horizontal, 20).padding(.top, 16)
                         }
                         statusStrip.padding(.horizontal, 20).padding(.top, 16)
                         transcriptPanel.padding(.horizontal, 20).padding(.top, 12)
@@ -568,6 +575,91 @@ struct ContentView: View {
         .padding(.vertical, 12)
         .background(Theme.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.12), lineWidth: 0.5))
+    }
+
+    // MARK: - Whisper Model Banner
+
+    private var whisperModelBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "waveform.badge.mic")
+                .foregroundStyle(.orange)
+                .font(.system(size: 18))
+
+            VStack(alignment: .leading, spacing: 2) {
+                switch whisperModelState {
+                case .missing:
+                    Text("Whisper speech model required")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Text("Download ggml-base.bin (~142 MB) for local mic transcription via whisper.cpp.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary)
+                case .downloading:
+                    Text("Downloading Whisper model...")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Text(whisperDownloadProgress)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary)
+                case .failed:
+                    Text("Download failed")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.redBright)
+                    Text("Check your internet connection and try again.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary)
+                case .ready:
+                    EmptyView()
+                }
+            }
+
+            Spacer()
+
+            if whisperModelState == .missing || whisperModelState == .failed {
+                Button("Download") { downloadWhisperModel() }
+                    .font(.system(size: 12, weight: .semibold))
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+            if whisperModelState == .downloading {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.orange.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.12), lineWidth: 0.5))
+    }
+
+    private func downloadWhisperModel() {
+        whisperModelState = .downloading
+        whisperDownloadProgress = "Starting download..."
+
+        Task.detached(priority: .userInitiated) {
+            let modelDir = WhisperEngine.modelDirectory
+            try? FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
+            let destURL = WhisperEngine.defaultModelPath
+            let srcURL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(WhisperEngine.defaultModelName)")!
+
+            let (tempURL, response) = try await URLSession.shared.download(from: srcURL, delegate: nil)
+
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                await MainActor.run {
+                    whisperModelState = .failed
+                    whisperDownloadProgress = "Server returned error."
+                }
+                return
+            }
+
+            try? FileManager.default.removeItem(at: destURL)
+            try FileManager.default.moveItem(at: tempURL, to: destURL)
+
+            await MainActor.run {
+                whisperModelState = .ready
+                whisperDownloadProgress = ""
+                _ = recorder.whisperEngine.loadModel()
+            }
+        }
     }
 
     // MARK: - Transcript Panel

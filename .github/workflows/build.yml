@@ -18,6 +18,9 @@ jobs:
       - name: Select Xcode 16
         run: sudo xcode-select -s /Applications/Xcode_16.0.app || sudo xcode-select -s /Applications/Xcode.app
 
+      - name: Build whisper.cpp static library
+        run: make whisper-lib
+
       - name: Resolve dependencies
         run: swift package resolve
 
@@ -61,6 +64,9 @@ jobs:
 
       - name: Select Xcode 15.4
         run: sudo xcode-select -s /Applications/Xcode_15.4.app || sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Build whisper.cpp static library
+        run: make whisper-lib
 
       - name: Resolve dependencies
         run: swift package resolve
@@ -132,7 +138,12 @@ jobs:
             ```bash
             curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh | bash
             ```
-            Auto-detects your macOS version, downloads the right zip, installs app + Ollama + AI model, and launches.
+            Auto-detects your macOS version, downloads the right zip, installs app + Ollama + AI model + Whisper speech model, and launches.
 
             ### Or install manually:
             Download the zip above, then `unzip` and `bash install.sh`.
+
+            ### What's new
+            - **whisper.cpp** for microphone transcription (100% local, Metal-accelerated)
+            - **SFSpeechRecognizer** for system audio (no more dual-task XPC conflicts)
+            - Whisper model auto-download in install script and in-app prompt

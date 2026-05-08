@@ -211,6 +211,28 @@ else
     echo ""
 fi
 
+# ── Whisper model (mic transcription) ─────────────────────────────────
+WHISPER_MODEL_DIR="$HOME/Library/Application Support/Scripta/models"
+WHISPER_MODEL="ggml-base.bin"
+WHISPER_MODEL_PATH="$WHISPER_MODEL_DIR/$WHISPER_MODEL"
+WHISPER_MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$WHISPER_MODEL"
+
+if [ -f "$WHISPER_MODEL_PATH" ]; then
+    ok "Whisper model already downloaded ($WHISPER_MODEL)"
+else
+    info "Downloading Whisper speech model ($WHISPER_MODEL, ~142 MB)..."
+    info "This enables 100% local microphone transcription via whisper.cpp."
+    mkdir -p "$WHISPER_MODEL_DIR"
+    if curl -fSL --progress-bar -o "$WHISPER_MODEL_PATH" "$WHISPER_MODEL_URL"; then
+        ok "Whisper model downloaded to $WHISPER_MODEL_PATH"
+    else
+        warn "Whisper model download failed. The app will prompt you to download on first launch."
+        warn "Or manually download:"
+        echo "  curl -L -o \"$WHISPER_MODEL_PATH\" $WHISPER_MODEL_URL"
+    fi
+fi
+echo ""
+
 # ── macOS version notes ──────────────────────────────────────────────
 if [ "$MACOS_MAJOR" -ge 15 ]; then
     warn "macOS 15 requires manual permission grants:"

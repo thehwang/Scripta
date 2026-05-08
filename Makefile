@@ -3,10 +3,45 @@ ENTITLEMENTS=Scripta.entitlements
 INSTALL_DIR=/Applications
 CERT_NAME=Scripta Dev
 DEV_BUNDLE=build/$(APP).app
+WHISPER_DIR=vendor/whisper.cpp
+WHISPER_BUILD=$(WHISPER_DIR)/build-static
+WHISPER_LIB=Sources/CWhisper/lib/libwhisper.a
 
-.PHONY: build run install setup-cert test clean reset-permissions
+.PHONY: build run install setup-cert test clean reset-permissions whisper-lib
 
-build:
+whisper-lib: $(WHISPER_LIB)
+
+$(WHISPER_LIB):
+	@echo "Building whisper.cpp static library ..."
+	@mkdir -p vendor
+	@if [ ! -d "$(WHISPER_DIR)" ]; then \
+		git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git $(WHISPER_DIR); \
+	fi
+	@cmake -B $(WHISPER_BUILD) -S $(WHISPER_DIR) \
+		-DCMAKE_OSX_ARCHITECTURES="arm64" \
+		-DBUILD_SHARED_LIBS=OFF \
+		-DGGML_METAL=ON \
+		-DWHISPER_COREML=OFF \
+		-DWHISPER_BUILD_TESTS=OFF \
+		-DWHISPER_BUILD_EXAMPLES=OFF \
+		-DCMAKE_BUILD_TYPE=Release 2>&1 | tail -5
+	@cmake --build $(WHISPER_BUILD) --config Release -j$$(sysctl -n hw.ncpu) 2>&1 | tail -5
+	@mkdir -p Sources/CWhisper/lib Sources/CWhisper/include
+	@libtool -static -o $(WHISPER_LIB) \
+		$(WHISPER_BUILD)/src/libwhisper.a \
+		$(WHISPER_BUILD)/ggml/src/libggml.a \
+		$(WHISPER_BUILD)/ggml/src/libggml-base.a \
+		$(WHISPER_BUILD)/ggml/src/libggml-cpu.a \
+		$(WHISPER_BUILD)/ggml/src/ggml-metal/libggml-metal.a \
+		$(WHISPER_BUILD)/ggml/src/ggml-blas/libggml-blas.a 2>/dev/null
+	@cp $(WHISPER_DIR)/include/whisper.h Sources/CWhisper/include/
+	@cp $(WHISPER_DIR)/ggml/include/ggml.h Sources/CWhisper/include/
+	@cp $(WHISPER_DIR)/ggml/include/ggml-cpu.h Sources/CWhisper/include/
+	@cp $(WHISPER_DIR)/ggml/include/ggml-backend.h Sources/CWhisper/include/
+	@cp $(WHISPER_DIR)/ggml/include/ggml-alloc.h Sources/CWhisper/include/
+	@echo "whisper.cpp static library built: $(WHISPER_LIB)"
+
+build: $(WHISPER_LIB)
 	swift build
 
 setup-cert:
@@ -101,7 +136,7 @@ test:
 	swift test
 
 clean:
-	rm -rf .build build
+	rm -rf .build build vendor Sources/CWhisper/lib/*.a
 
 reset-permissions:
 	tccutil reset ScreenCapture com.thehwang.scripta
