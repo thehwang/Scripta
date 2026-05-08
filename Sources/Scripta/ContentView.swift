@@ -871,15 +871,9 @@ struct ContentView: View {
 
     private var bottomBar: some View {
         HStack(spacing: 16) {
-            HStack(spacing: 10) {
-                Toggle(isOn: $recorder.saveAudio) {
-                    Label("Audio", systemImage: recorder.saveAudio ? "waveform.circle.fill" : "waveform.circle")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(recorder.saveAudio ? Theme.accentSoft : Theme.textMuted)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .disabled(recorder.isRecording)
+            HStack(spacing: 4) {
+                micMuteButton
+                saveAudioButton
             }
 
             languagePicker
@@ -1059,6 +1053,65 @@ struct ContentView: View {
     private var shouldShowTranslation: Bool {
         translationService.isEnabled &&
         (translationService.displayMode == .bilingual || translationService.displayMode == .translated)
+    }
+
+    // MARK: - OBS-Style Icon Buttons
+
+    private var micMuteButton: some View {
+        Button {
+            recorder.micMuted.toggle()
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: recorder.micMuted ? "mic.slash.fill" : "mic.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(recorder.micMuted ? Theme.redBright : Theme.accentSoft)
+                Text(recorder.micMuted ? "Muted" : "Mic")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(recorder.micMuted ? Theme.redBright.opacity(0.8) : Theme.textMuted)
+            }
+            .frame(width: 40, height: 34)
+            .background(
+                recorder.micMuted
+                    ? Color.red.opacity(0.15)
+                    : Theme.accent.opacity(0.12),
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(recorder.micMuted ? Color.red.opacity(0.3) : Theme.accent.opacity(0.2), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var saveAudioButton: some View {
+        Button {
+            if !recorder.isRecording {
+                recorder.saveAudio.toggle()
+            }
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: recorder.saveAudio ? "internaldrive.fill" : "internaldrive")
+                    .font(.system(size: 13))
+                    .foregroundStyle(recorder.saveAudio ? Theme.accentSoft : Theme.textMuted)
+                Text("Save")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(recorder.saveAudio ? Theme.textMuted : Theme.textMuted.opacity(0.5))
+            }
+            .frame(width: 40, height: 34)
+            .background(
+                recorder.saveAudio
+                    ? Theme.accent.opacity(0.12)
+                    : Color.white.opacity(0.04),
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(recorder.saveAudio ? Theme.accent.opacity(0.2) : Color.white.opacity(0.08), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .opacity(recorder.isRecording ? 0.5 : 1.0)
     }
 
     // MARK: - Font Size Controls

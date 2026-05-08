@@ -21,6 +21,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
     @Published private(set) var exportedFilePath: String = ""
     @Published private(set) var lastError: String = ""
     @Published var saveAudio: Bool = true
+    @Published var micMuted: Bool = false
 
     var isRecording: Bool { state == .recording }
 
@@ -64,7 +65,6 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
     private var micAudioFile: AVAudioFile?
     private var systemAudioFile: AVAudioFile?
-    private var writerMicConverter: AVAudioConverter?
     private var micTempURL: URL?
     private var systemTempURL: URL?
 
@@ -119,7 +119,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         }
 
         whisperEngine.onTranscript = { [weak self] text in
-            guard let self, self.state == .recording else { return }
+            guard let self, self.state == .recording, !self.micMuted else { return }
             self.appendWhisperTranscript(text)
         }
 
@@ -164,7 +164,6 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
-
         whisperEngine.flush()
         systemRequest?.endAudio()
 
@@ -198,7 +197,6 @@ final class MeetingRecorder: NSObject, ObservableObject {
         speechRecognizer = nil
         systemAudioConverter = nil
         micAudioFile = nil; systemAudioFile = nil
-        writerMicConverter = nil
         micToWhisperConverter = nil
         micTempURL = nil; systemTempURL = nil
         whisperEngine.reset()
@@ -359,7 +357,13 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
         do {
             try inputNode.setVoiceProcessingEnabled(true)
-            mplog("Voice Processing IO enabled (AEC + noise suppression)")
+            if #available(macOS 14.0, *) {
+                inputNode.voiceProcessingOtherAudioDuckingConfiguration =
+                    .init(enableAdvancedDucking: false, duckingLevel: .min)
+                mplog("Voice Processing IO enabled (AEC + noise suppression, ducking disabled)")
+            } else {
+                mplog("Voice Processing IO enabled (AEC + noise suppression)")
+            }
         } catch {
             mplog("Voice Processing IO failed: \(error.localizedDescription) — continuing without AEC")
         }
@@ -387,9 +391,11 @@ final class MeetingRecorder: NSObject, ObservableObject {
                 mplog("Mic tap: buffer #\(self.micBufferCount) frames=\(buffer.frameLength) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount)")
             }
 
-            self.writeMicAudio(buffer)
+            if !self.micMuted {
+                self.writeMicAudio(buffer)
+            }
 
-            guard let ch0 = buffer.floatChannelData?[0] else { return }
+            guard !self.micMuted, let ch0 = buffer.floatChannelData?[0] else { return }
             let frameCount = Int(buffer.frameLength)
 
             if buffer.format.sampleRate == whisperFormat.sampleRate {
@@ -690,10 +696,6 @@ final class MeetingRecorder: NSObject, ObservableObject {
                 interleaved: false
             )
             micAudioFile = file
-            writerMicConverter = AVAudioConverter(
-                from: audioEngine.inputNode.outputFormat(forBus: 0),
-                to: file.processingFormat
-            )
             mplog("Audio writer: mic → \(micTempURL!.lastPathComponent)")
         } catch {
             mplog("Failed to create mic audio file: \(error)")
@@ -714,32 +716,35 @@ final class MeetingRecorder: NSObject, ObservableObject {
     }
 
     private func writeMicAudio(_ buffer: AVAudioPCMBuffer) {
-        guard let file = micAudioFile, let converter = writerMicConverter else { return }
+        guard let file = micAudioFile else { return }
+
+        guard let ch0 = buffer.floatChannelData?[0] else { return }
+        let frames = buffer.frameLength
 
         let outFormat = file.processingFormat
-        let outBuf: AVAudioPCMBuffer
+        let ratio = outFormat.sampleRate / buffer.format.sampleRate
+        let outFrames = AVAudioFrameCount(Double(frames) * ratio)
+        guard outFrames > 0, let output = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: outFrames) else { return }
+        output.frameLength = outFrames
 
-        if buffer.format == outFormat {
-            outBuf = buffer
+        guard let outPtr = output.floatChannelData?[0] else { return }
+        if abs(ratio - 1.0) < 0.001 && buffer.format.channelCount == 1 {
+            memcpy(outPtr, ch0, Int(frames) * MemoryLayout<Float>.size)
         } else {
-            let frameCount = AVAudioFrameCount(
-                Double(buffer.frameLength) * outFormat.sampleRate / buffer.format.sampleRate + 32
-            )
-            guard let output = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: max(frameCount, 32)) else { return }
-            var provided = false
-            var err: NSError?
-            let status = converter.convert(to: output, error: &err) { _, outStatus in
-                if provided { outStatus.pointee = .noDataNow; return nil }
-                provided = true
-                outStatus.pointee = .haveData
-                return buffer
+            let srcCount = Int(frames)
+            let dstCount = Int(outFrames)
+            for i in 0..<dstCount {
+                let srcIdx = Double(i) / ratio
+                let idx0 = Int(srcIdx)
+                let frac = Float(srcIdx - Double(idx0))
+                let s0 = ch0[min(idx0, srcCount - 1)]
+                let s1 = ch0[min(idx0 + 1, srcCount - 1)]
+                outPtr[i] = s0 + frac * (s1 - s0)
             }
-            guard status != .error, output.frameLength > 0 else { return }
-            outBuf = output
         }
 
         audioWriteQueue.async {
-            do { try file.write(from: outBuf) }
+            do { try file.write(from: output) }
             catch { mplog("Mic write error: \(error)") }
         }
     }
@@ -789,7 +794,6 @@ final class MeetingRecorder: NSObject, ObservableObject {
         audioWriteQueue.async { [weak self] in
             self?.micAudioFile = nil
             self?.systemAudioFile = nil
-            self?.writerMicConverter = nil
 
             let fm = FileManager.default
             let validMic: URL? = micURL.flatMap { url in
