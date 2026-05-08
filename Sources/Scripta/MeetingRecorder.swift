@@ -88,6 +88,10 @@ final class MeetingRecorder: NSObject, ObservableObject {
     private var systemRetryCount = 0
     private var micBufferCount = 0
     private var systemBufferCount = 0
+    private var micTaskStartTime: Date?
+    private var systemTaskStartTime: Date?
+    private var micTaskCount = 0
+    private var systemTaskCount = 0
     private static let maxMicRetries = 10
     private static let maxSystemRetries = 120
 
@@ -176,6 +180,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         activeMicStart = nil; activeSystemStart = nil
         micTaskProducedResult = false; systemTaskProducedResult = false
         micRetryCount = 0; systemRetryCount = 0; micBufferCount = 0; systemBufferCount = 0
+        micTaskStartTime = nil; systemTaskStartTime = nil; micTaskCount = 0; systemTaskCount = 0
         micTask?.cancel(); micTask = nil; micRequest = nil
         systemTask?.cancel(); systemTask = nil; systemRequest = nil
         micSpeechRecognizer = nil; systemSpeechRecognizer = nil
@@ -272,23 +277,19 @@ final class MeetingRecorder: NSObject, ObservableObject {
             mplog("[\(label)] recognizer ready: available=\(rec.isAvailable) onDevice=\(rec.supportsOnDeviceRecognition)")
         }
 
-        let micReq = SFSpeechAudioBufferRecognitionRequest()
-        micReq.shouldReportPartialResults = true
-        micReq.requiresOnDeviceRecognition = true
-        micReq.addsPunctuation = true
+        let micReq = Self.makeSpeechRequest()
         micRequest = micReq
 
         try startAudioEngineWithRetry(request: micReq)
 
+        micTaskCount = 1
+        micTaskStartTime = Date()
         micTask = micSpeechRecognizer.recognitionTask(with: micReq) { [weak self] result, error in
             self?.handleRecognitionResult(result: result, error: error, speaker: "You")
         }
-        mplog("Apple Speech pipeline: mic recognition task created (dedicated recognizer)")
+        mplog("Apple Speech pipeline: mic task #1 created (dedicated recognizer, dictation hint)")
 
-        let sysReq = SFSpeechAudioBufferRecognitionRequest()
-        sysReq.shouldReportPartialResults = true
-        sysReq.requiresOnDeviceRecognition = true
-        sysReq.addsPunctuation = true
+        let sysReq = Self.makeSpeechRequest()
         systemRequest = sysReq
 
         systemAudioCapture.onAudioSampleBuffer = { [weak self] sampleBuffer in
@@ -303,10 +304,12 @@ final class MeetingRecorder: NSObject, ObservableObject {
         try await systemAudioCapture.start()
         mplog("Apple Speech pipeline: system audio capture started")
 
+        systemTaskCount = 1
+        systemTaskStartTime = Date()
         systemTask = systemSpeechRecognizer.recognitionTask(with: sysReq) { [weak self] result, error in
             self?.handleRecognitionResult(result: result, error: error, speaker: "Remote")
         }
-        mplog("Apple Speech pipeline: both recognition tasks created (separate recognizers)")
+        mplog("Apple Speech pipeline: system task #1 created — both channels active (separate recognizers)")
     }
 
     private func startAudioEngineWithRetry(request: SFSpeechAudioBufferRecognitionRequest) throws {
@@ -417,17 +420,20 @@ final class MeetingRecorder: NSObject, ObservableObject {
                 else { self.systemTaskProducedResult = true; self.systemRetryCount = 0 }
 
                 let text = result.bestTranscription.formattedString
-                mplog("[\(speaker)] result (isFinal=\(result.isFinal)) len=\(text.count): \(String(text.prefix(80)))")
+                let taskAge = (isMic ? self.micTaskStartTime : self.systemTaskStartTime).map { -$0.timeIntervalSinceNow } ?? 0
+                mplog("[\(speaker)] result (isFinal=\(result.isFinal), taskAge=\(String(format: "%.1f", taskAge))s) len=\(text.count): \(String(text.prefix(120)))")
                 self.processPartialResult(result, speaker: speaker)
 
                 if result.isFinal {
+                    mplog("[\(speaker)] task #\(isMic ? self.micTaskCount : self.systemTaskCount) finalized after \(String(format: "%.1f", taskAge))s → restarting")
                     self.handleTaskFinished(speaker: speaker, willRestart: true)
                 }
             }
 
             if let error {
                 let desc = error.localizedDescription
-                mplog("[\(speaker)] error: \(desc) (state=\(self.state.rawValue), micBufs=\(self.micBufferCount))")
+                let taskAge = (isMic ? self.micTaskStartTime : self.systemTaskStartTime).map { -$0.timeIntervalSinceNow } ?? 0
+                mplog("[\(speaker)] error after \(String(format: "%.1f", taskAge))s: \(desc) (state=\(self.state.rawValue), bufs=\(isMic ? self.micBufferCount : self.systemBufferCount))")
                 let produced = isMic ? self.micTaskProducedResult : self.systemTaskProducedResult
 
                 if desc.contains("access assets") || desc.contains("not available") {
@@ -546,6 +552,15 @@ final class MeetingRecorder: NSObject, ObservableObject {
         setCommitted(0, isMic: isMic)
     }
 
+    private static func makeSpeechRequest() -> SFSpeechAudioBufferRecognitionRequest {
+        let req = SFSpeechAudioBufferRecognitionRequest()
+        req.shouldReportPartialResults = true
+        req.requiresOnDeviceRecognition = true
+        req.addsPunctuation = true
+        req.taskHint = .dictation
+        return req
+    }
+
     private func restartRecognitionTask(speaker: String) {
         let isMic = speaker == "You"
         let recognizer = isMic ? micSpeechRecognizer : systemSpeechRecognizer
@@ -557,25 +572,27 @@ final class MeetingRecorder: NSObject, ObservableObject {
         }
         mplog("restartTask [\(speaker)] creating new task on dedicated recognizer")
 
-        let newReq = SFSpeechAudioBufferRecognitionRequest()
-        newReq.shouldReportPartialResults = true
-        newReq.requiresOnDeviceRecognition = true
-        newReq.addsPunctuation = true
-
+        let newReq = Self.makeSpeechRequest()
         setCommitted(0, isMic: isMic)
 
         if isMic {
             micTaskProducedResult = false
             micRequest = newReq
+            micTaskCount += 1
+            micTaskStartTime = Date()
             micTask = recognizer.recognitionTask(with: newReq) { [weak self] result, error in
                 self?.handleRecognitionResult(result: result, error: error, speaker: "You")
             }
+            mplog("[You] task #\(micTaskCount) started")
         } else {
             systemTaskProducedResult = false
             systemRequest = newReq
+            systemTaskCount += 1
+            systemTaskStartTime = Date()
             systemTask = recognizer.recognitionTask(with: newReq) { [weak self] result, error in
                 self?.handleRecognitionResult(result: result, error: error, speaker: "Remote")
             }
+            mplog("[Remote] task #\(systemTaskCount) started")
         }
     }
 
