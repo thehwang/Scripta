@@ -1,0 +1,327 @@
+-- Scripta demo recording automation
+-- =================================
+-- Drives the Scripta UI through the v3.2.0 Gemma 4 demo script while
+-- voiceover-final.mp3 plays. Designed for one-shot screen recording sessions
+-- where you want every take to look identical.
+--
+-- Prerequisites:
+--   1. Hammerspoon installed and granted Accessibility permission.
+--   2. Scripta v3.2.1+ installed (earlier versions miss the AX identifiers).
+--   3. Gemma 4 E2B pulled in Ollama (`ollama pull gemma4:e2b`).
+--   4. voiceover-final.mp3 exists at the path configured below.
+--
+-- Setup:
+--   Add this line to ~/.hammerspoon/init.lua (adjust path to your repo):
+--     dofile(os.getenv("HOME") .. "/Cursor/cdl_cursor_rules/MeetingPilot/demo/scripta-demo.lua")
+--   Then reload Hammerspoon config (menu bar → Reload Config).
+--
+-- Hotkeys:
+--   ⌥⌘D  Start the demo (3-second countdown so you can hit ⌘⇧5 to record first).
+--   ⌥⌘.  Abort the running demo (kills all pending timers + afplay).
+--
+-- See MeetingPilot/demo/README.md for the full operational checklist.
+
+local M = {}
+
+-- ── Configuration ────────────────────────────────────────────────────────
+local CONFIG = {
+    -- Absolute path to the ElevenLabs voiceover. Update if you move the repo.
+    voiceoverPath = os.getenv("HOME") .. "/Cursor/cdl_cursor_rules/MeetingPilot/blog/voiceover-final.mp3",
+
+    -- The Ollama model the demo should select. Must match what's in
+    -- SummaryModelManager.recommendedModels and `ollama list`.
+    gemmaModel = "gemma4:e2b",
+
+    -- Cue timestamps, in seconds, anchored to voiceover-final.mp3 (78.5s total).
+    -- Tweak if you re-record the voiceover. Each cue corresponds to a paragraph
+    -- start in the narration; see blog/gemma4-challenge-demo-script.md.
+    cues = {
+        openSettings      = 7.5,    -- "Notice the context window column..."
+        clickGemmaRow     = 13.0,   -- Highlight selection in the picker
+        closeSettings     = 23.5,   -- Esc just before "I'll record a short clip"
+        clickRecord       = 25.0,   -- "Two channels, transcribed in real time..."
+        promptUserToSpeak = 27.5,   -- Show alert: speak the mic line
+        playSystemAudioReminder = 28.0, -- Remind user to spacebar their YouTube tab
+        clickStop         = 47.0,   -- After "Now the interesting part."
+        clickSummarize    = 50.5,   -- During "Summarize calls Ollama locally..."
+        showTerminalCue   = 55.0,   -- Optional ⌘⇥ to terminal showing log
+        backToScripta     = 60.0,
+        scrollSummary     = 67.0,   -- "Now Gemma 4 sees the whole transcript"
+        endAlert          = 79.0,   -- One second after voiceover ends → stop recording
+    },
+}
+
+-- ── State (so abort can clean up) ────────────────────────────────────────
+local state = {
+    timers = {},
+    afplayTask = nil,
+    running = false,
+}
+
+-- ── Helpers ──────────────────────────────────────────────────────────────
+
+local function log(msg)
+    print(os.date("[%H:%M:%S]") .. " scripta-demo: " .. msg)
+end
+
+local function findScripta()
+    return hs.application.get("Scripta")
+end
+
+-- Walk the accessibility tree to find an element by its AXIdentifier.
+-- Returns nil if not found within `depthLimit`.
+local function findByIdentifier(app, identifier, depthLimit)
+    depthLimit = depthLimit or 25
+    local axApp = hs.axuielement.applicationElement(app)
+    if not axApp then return nil end
+
+    local function walk(el, depth)
+        if depth > depthLimit then return nil end
+        local ok, ident = pcall(function() return el.AXIdentifier end)
+        if ok and ident == identifier then return el end
+        local kidsOk, kids = pcall(function() return el:attributeValue("AXChildren") end)
+        if not kidsOk or not kids then return nil end
+        for _, child in ipairs(kids) do
+            local match = walk(child, depth + 1)
+            if match then return match end
+        end
+        return nil
+    end
+
+    return walk(axApp, 0)
+end
+
+-- Walk the AX tree and click the first AXButton whose AXTitle matches `title`.
+-- Used as fallback when an element doesn't have an explicit identifier.
+local function findButtonByTitle(app, title, depthLimit)
+    depthLimit = depthLimit or 25
+    local axApp = hs.axuielement.applicationElement(app)
+    if not axApp then return nil end
+
+    local function walk(el, depth)
+        if depth > depthLimit then return nil end
+        local roleOk, role = pcall(function() return el.AXRole end)
+        local titleOk, t = pcall(function() return el.AXTitle end)
+        if roleOk and titleOk and role == "AXButton" and t == title then return el end
+        local kidsOk, kids = pcall(function() return el:attributeValue("AXChildren") end)
+        if not kidsOk or not kids then return nil end
+        for _, child in ipairs(kids) do
+            local match = walk(child, depth + 1)
+            if match then return match end
+        end
+        return nil
+    end
+
+    return walk(axApp, 0)
+end
+
+local function pressButton(identifier, fallbackTitle)
+    local scripta = findScripta()
+    if not scripta then
+        log("ERROR: Scripta not running")
+        return false
+    end
+
+    local el = findByIdentifier(scripta, identifier)
+    if not el and fallbackTitle then
+        el = findButtonByTitle(scripta, fallbackTitle)
+    end
+
+    if not el then
+        log(string.format("ERROR: could not find button id=%s title=%s",
+            identifier, tostring(fallbackTitle)))
+        return false
+    end
+
+    local ok, err = pcall(function() el:performAction("AXPress") end)
+    if not ok then
+        log("ERROR: AXPress failed: " .. tostring(err))
+        return false
+    end
+    log(string.format("clicked %s", identifier))
+    return true
+end
+
+-- Schedule a callback at `seconds` from now; track it so abort can cancel.
+local function at(seconds, callback)
+    local t = hs.timer.doAfter(seconds, function()
+        if state.running then callback() end
+    end)
+    table.insert(state.timers, t)
+end
+
+local function bigAlert(text, color, duration)
+    hs.alert.show(text, {
+        textSize = 28,
+        textFont = "Menlo-Bold",
+        fillColor = color or {white = 0, alpha = 0.85},
+        strokeColor = {white = 1, alpha = 0},
+        radius = 14,
+    }, duration or 4)
+end
+
+-- ── Demo lifecycle ───────────────────────────────────────────────────────
+
+local function warmOllama()
+    log("warming Ollama (Gemma 4)...")
+    hs.task.new("/usr/bin/curl", nil, {
+        "-s", "-X", "POST", "http://localhost:11434/api/generate",
+        "-d", string.format('{"model":"%s","prompt":"hi","stream":false}', CONFIG.gemmaModel),
+    }):start()
+end
+
+local function abortDemo()
+    if not state.running then
+        hs.alert.show("Demo not running", 1)
+        return
+    end
+    log("aborting demo")
+    state.running = false
+    for _, t in ipairs(state.timers) do
+        if t and t.stop then t:stop() end
+    end
+    state.timers = {}
+    if state.afplayTask then
+        state.afplayTask:terminate()
+        state.afplayTask = nil
+    end
+    -- Stop any in-progress recording, just in case.
+    pressButton("StopButton", "Stop Recording")
+    bigAlert("Demo aborted", {red=0.6, green=0.1, blue=0.1, alpha=0.85}, 2)
+end
+
+local function startVoiceover()
+    if not hs.fs.attributes(CONFIG.voiceoverPath) then
+        log("ERROR: voiceover not found at " .. CONFIG.voiceoverPath)
+        bigAlert("voiceover-final.mp3 not found!\nCheck CONFIG.voiceoverPath", {red=0.8, green=0.1, blue=0.1}, 4)
+        return false
+    end
+    log("starting voiceover: " .. CONFIG.voiceoverPath)
+    state.afplayTask = hs.task.new("/usr/bin/afplay", function(exitCode)
+        log("afplay exited: " .. tostring(exitCode))
+    end, {CONFIG.voiceoverPath})
+    state.afplayTask:start()
+    return true
+end
+
+local function runCues()
+    local c = CONFIG.cues
+
+    at(c.openSettings, function()
+        log("⌘, → open Settings")
+        local scripta = findScripta()
+        if scripta then scripta:activate() end
+        hs.eventtap.keyStroke({"cmd"}, ",")
+    end)
+
+    at(c.clickGemmaRow, function()
+        pressButton("InstalledModel." .. CONFIG.gemmaModel)
+    end)
+
+    at(c.closeSettings, function()
+        log("Esc → close Settings (uses v3.2.1 fix)")
+        hs.eventtap.keyStroke({}, "escape")
+    end)
+
+    at(c.clickRecord, function()
+        local scripta = findScripta()
+        if scripta then scripta:activate() end
+        pressButton("RecordButton", "Start Recording")
+    end)
+
+    at(c.promptUserToSpeak, function()
+        bigAlert("🎤 Speak now:\n\"Let me try summarizing this meeting.\"",
+            {red=0.15, green=0.55, blue=0.25, alpha=0.92}, 4)
+    end)
+
+    at(c.playSystemAudioReminder, function()
+        hs.alert.show("Press space on your YouTube tab now → system audio source", 3)
+    end)
+
+    at(c.clickStop, function()
+        pressButton("StopButton", "Stop Recording")
+    end)
+
+    at(c.clickSummarize, function()
+        -- A small delay to let recorder.state transition to .completed before
+        -- the SummarizeButton becomes interactive.
+        hs.timer.doAfter(0.3, function()
+            pressButton("SummarizeButton", "Summarize")
+        end)
+    end)
+
+    -- Optional ⌘⇥ glance at the Terminal to show the `num_ctx=131072` log line.
+    -- Comment out if your demo doesn't want this beat.
+    at(c.showTerminalCue, function()
+        log("⌘⇥ to Terminal (3s peek at num_ctx log)")
+        hs.eventtap.keyStroke({"cmd"}, "tab")
+    end)
+
+    at(c.backToScripta, function()
+        log("⌘⇥ back to Scripta")
+        hs.eventtap.keyStroke({"cmd"}, "tab")
+    end)
+
+    at(c.scrollSummary, function()
+        log("scroll summary panel")
+        local scripta = findScripta()
+        if scripta then scripta:activate() end
+        -- Three down-arrow strokes inside the summary scroll view.
+        for i = 1, 3 do
+            hs.timer.doAfter(i * 0.4, function()
+                hs.eventtap.keyStroke({}, "down")
+            end)
+        end
+    end)
+
+    at(c.endAlert, function()
+        bigAlert("✓ Demo complete — STOP screen recording now",
+            {red=0.1, green=0.4, blue=0.2, alpha=0.9}, 5)
+        state.running = false
+    end)
+end
+
+function M.runDemo()
+    if state.running then
+        hs.alert.show("Demo already running — press ⌥⌘. to abort", 2)
+        return
+    end
+
+    local scripta = findScripta()
+    if not scripta then
+        bigAlert("Scripta is not running.\nLaunch it first, then retry.",
+            {red=0.7, green=0.1, blue=0.1}, 3)
+        return
+    end
+
+    log("=== demo run begin ===")
+    state.running = true
+    state.timers = {}
+
+    scripta:activate()
+    warmOllama()
+
+    -- 3-second countdown so user can switch to ⌘⇧5 and start screen recording.
+    bigAlert("Start screen recording NOW.\nDemo begins in 3...", {white=0, alpha=0.9}, 1)
+    hs.timer.doAfter(1, function() if state.running then bigAlert("...2", nil, 1) end end)
+    hs.timer.doAfter(2, function() if state.running then bigAlert("...1", nil, 1) end end)
+    hs.timer.doAfter(3, function()
+        if not state.running then return end
+        if not startVoiceover() then
+            state.running = false
+            return
+        end
+        runCues()
+    end)
+end
+
+-- ── Hotkeys ─────────────────────────────────────────────────────────────
+
+local mods = {"alt", "cmd"}
+hs.hotkey.bind(mods, "d", M.runDemo)
+hs.hotkey.bind(mods, ".", abortDemo)
+
+log("scripta-demo.lua loaded — ⌥⌘D to start, ⌥⌘. to abort")
+hs.alert.show("Scripta demo loaded — ⌥⌘D to run", 2)
+
+return M

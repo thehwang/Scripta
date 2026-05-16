@@ -919,6 +919,7 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .disabled(!summaryModelManager.isReady || summaryService.isGenerating)
         .help(summaryModelManager.isReady ? "Generate AI summary" : "Connect Ollama and select a model first")
+        .accessibilityIdentifier("SummarizeButton")
     }
 
     private var startButton: some View {
@@ -939,6 +940,7 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .disabled(recorder.state == .transcribing)
         .opacity(recorder.state == .transcribing ? 0.4 : 1)
+        .accessibilityIdentifier("RecordButton")
     }
 
     private var stopButton: some View {
@@ -958,6 +960,7 @@ struct ContentView: View {
             .shadow(color: Color.red.opacity(0.3), radius: 8, y: 2)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("StopButton")
     }
 
     @State private var languageModelMissing = false

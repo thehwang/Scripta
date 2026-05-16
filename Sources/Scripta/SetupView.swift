@@ -36,6 +36,7 @@ struct SetupView: View {
             .controlSize(.small)
             .keyboardShortcut(.cancelAction)
             .help("Return to Scripta (⎋)")
+            .accessibilityIdentifier("SetupDoneButton")
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)
@@ -224,38 +225,42 @@ struct SetupView: View {
             return inferredCtx >= 1024 ? "\(inferredCtx / 1024)K ctx" : "\(inferredCtx) ctx"
         }()
 
-        return HStack(spacing: 12) {
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(isSelected ? .blue : .secondary)
-                .font(.title3)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(model.name)
-                        .fontWeight(.medium)
-                    if metadata?.isNew == true {
-                        Text("NEW")
-                            .font(.caption2)
-                            .fontWeight(.bold)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.green.opacity(0.18), in: Capsule())
-                            .foregroundStyle(.green)
-                    }
-                }
-                Text("\(model.sizeDescription) · \(contextLabel)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
-        .padding(10)
-        .background(isSelected ? Color.blue.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-        .contentShape(Rectangle())
-        .onTapGesture {
+        return Button {
             modelManager.selectModel(model.name)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? .blue : .secondary)
+                    .font(.title3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(model.name)
+                            .fontWeight(.medium)
+                        if metadata?.isNew == true {
+                            Text("NEW")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.green.opacity(0.18), in: Capsule())
+                                .foregroundStyle(.green)
+                        }
+                    }
+                    Text("\(model.sizeDescription) · \(contextLabel)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+            .padding(10)
+            .background(isSelected ? Color.blue.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Select model \(model.name)")
+        .accessibilityIdentifier("InstalledModel.\(model.name)")
     }
 
     private var recommendedModelList: some View {
