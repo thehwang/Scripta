@@ -36,19 +36,27 @@ local CONFIG = {
     -- Tweak if you re-record the voiceover. Each cue corresponds to a paragraph
     -- start in the narration; see blog/gemma4-challenge-demo-script.md.
     cues = {
-        openSettings      = 7.5,    -- "Notice the context window column..."
-        clickGemmaRow     = 13.0,   -- Highlight selection in the picker
-        closeSettings     = 23.5,   -- Esc just before "I'll record a short clip"
-        clickRecord       = 25.0,   -- "Two channels, transcribed in real time..."
-        promptUserToSpeak = 27.5,   -- Show alert: speak the mic line
-        playSystemAudioReminder = 28.0, -- Remind user to spacebar their YouTube tab
-        clickStop         = 47.0,   -- After "Now the interesting part."
-        clickSummarize    = 50.5,   -- During "Summarize calls Ollama locally..."
-        showTerminalCue   = 55.0,   -- Optional ⌘⇥ to terminal showing log
-        backToScripta     = 60.0,
-        scrollSummary     = 67.0,   -- "Now Gemma 4 sees the whole transcript"
-        endAlert          = 79.0,   -- One second after voiceover ends → stop recording
+        openSettings   = 7.5,    -- "Notice the context window column..."
+        clickGemmaRow  = 13.0,   -- Highlight selection in the picker
+        closeSettings  = 23.5,   -- Esc just before "I'll record a short clip"
+        clickRecord    = 25.0,   -- "Two channels, transcribed in real time..."
+        -- Mic line: user reads "Let me try summarizing this meeting" out loud.
+        -- System Audio channel is auto-filled by afplay'd voiceover via
+        -- ScreenCaptureKit, so no separate clip is needed.
+        promptUserToSpeak = 27.5,
+        clickStop      = 47.0,   -- After "Now the interesting part."
+        clickSummarize = 50.5,   -- During "Summarize calls Ollama locally..."
+        -- Optional Terminal peek to flash the `num_ctx=131072` log line.
+        -- Set both to nil if you want to skip this beat entirely.
+        showTerminalCue = 55.0,
+        backToScripta   = 60.0,
+        scrollSummary   = 67.0,   -- "Now Gemma 4 sees the whole transcript"
+        endAlert        = 79.0,   -- One second after voiceover ends → stop recording
     },
+
+    -- App name to focus when showTerminalCue fires. Must exactly match the
+    -- app bundle name (e.g. "Terminal", "iTerm", "Warp", "Ghostty").
+    terminalAppName = "Terminal",
 }
 
 -- ── State (so abort can clean up) ────────────────────────────────────────
@@ -234,10 +242,6 @@ local function runCues()
             {red=0.15, green=0.55, blue=0.25, alpha=0.92}, 4)
     end)
 
-    at(c.playSystemAudioReminder, function()
-        hs.alert.show("Press space on your YouTube tab now → system audio source", 3)
-    end)
-
     at(c.clickStop, function()
         pressButton("StopButton", "Stop Recording")
     end)
@@ -250,17 +254,27 @@ local function runCues()
         end)
     end)
 
-    -- Optional ⌘⇥ glance at the Terminal to show the `num_ctx=131072` log line.
-    -- Comment out if your demo doesn't want this beat.
-    at(c.showTerminalCue, function()
-        log("⌘⇥ to Terminal (3s peek at num_ctx log)")
-        hs.eventtap.keyStroke({"cmd"}, "tab")
-    end)
+    -- Optional peek at the Terminal to show the `num_ctx=131072` log line.
+    -- Uses launchOrFocus rather than ⌘⇥ because ⌘⇥ depends on the MRU app
+    -- order and is unreliable for automation. Set CONFIG.cues.showTerminalCue
+    -- and backToScripta to nil to skip this beat entirely.
+    if c.showTerminalCue then
+        at(c.showTerminalCue, function()
+            log("focus " .. CONFIG.terminalAppName .. " (peek at num_ctx log)")
+            local ok = hs.application.launchOrFocus(CONFIG.terminalAppName)
+            if not ok then
+                log("WARN: could not focus " .. CONFIG.terminalAppName ..
+                    " — check CONFIG.terminalAppName")
+            end
+        end)
+    end
 
-    at(c.backToScripta, function()
-        log("⌘⇥ back to Scripta")
-        hs.eventtap.keyStroke({"cmd"}, "tab")
-    end)
+    if c.backToScripta then
+        at(c.backToScripta, function()
+            log("focus Scripta")
+            hs.application.launchOrFocus("Scripta")
+        end)
+    end
 
     at(c.scrollSummary, function()
         log("scroll summary panel")

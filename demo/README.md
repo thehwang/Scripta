@@ -40,16 +40,28 @@ elsewhere. The script also exposes `CONFIG.voiceoverPath` at the top of
 
 Run through this every time you sit down to record:
 
-- [ ] Scripta v3.2.1+ is **installed and launched**. Earlier versions don't
+- [ ] Scripta v3.2.2+ is **installed and launched**. Earlier versions don't
       have the `accessibilityIdentifier` annotations the script relies on.
 - [ ] Ollama is running (`ollama list` succeeds) and `gemma4:e2b` is pulled.
-- [ ] A 30-second audio source is queued in another window (YouTube tab,
-      etc.) so the System Audio channel has content to transcribe. The
-      script will prompt you to spacebar-play it at the right moment.
-- [ ] AirPods / headphones on, so the voiceover doesn't bleed into the mic.
+- [ ] Scripta's mic mute toggle is **unmuted** (icon in bottom bar shows
+      a mic, not `mic.slash`). Otherwise the mic channel stays empty.
+- [ ] **Speakers, not AirPods.** The script plays the voiceover through
+      `afplay`; Scripta's System Audio capture picks it up via
+      ScreenCaptureKit, so the voiceover itself fills the System Audio
+      column in real time. No separate YouTube clip is needed. (If you
+      use AirPods, system audio still routes correctly to capture, but
+      it's worth verifying once.)
+- [ ] Acoustic echo cancellation will keep the mic channel clean when the
+      voiceover bleeds out of the speakers — that's by design, no action
+      needed from you.
 - [ ] Notifications silenced: Focus → Do Not Disturb.
 - [ ] Existing transcript in Scripta is empty (use the History panel to
       clear if needed).
+- [ ] **(Optional)** If using the Terminal peek cue, set
+      `CONFIG.terminalAppName` to your terminal of choice ("Terminal",
+      "iTerm", "Warp", "Ghostty") and have a window open in front
+      tailing `~/Library/Logs/Scripta/scripta.log` so the `num_ctx=131072`
+      line is visible when focused.
 
 ## Recording a take
 
@@ -61,9 +73,9 @@ Run through this every time you sit down to record:
    window.
 4. Watch the cues. At 27.5s the script will flash
    "🎤 Speak now: 'Let me try summarizing this meeting.'" — read that line
-   into your mic.
-5. At 28s it reminds you to spacebar your YouTube tab. Do it.
-6. At 79s the script tells you to stop screen recording.
+   into your mic. (The System Audio column is filling itself from the
+   voiceover playing through your speakers, no action needed there.)
+5. At 79s the script tells you to stop screen recording.
 
 ## If a take is bad
 
