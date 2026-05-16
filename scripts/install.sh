@@ -26,10 +26,10 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
-ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-fail()  { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+info()  { echo -e "${BLUE}[INFO]${NC} $1" >&2; }
+ok()    { echo -e "${GREEN}[OK]${NC} $1" >&2; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $1" >&2; }
+fail()  { echo -e "${RED}[ERROR]${NC} $1" >&2; exit 1; }
 
 cleanup() { rm -rf "$TMPDIR_INSTALL"; }
 trap cleanup EXIT
