@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.set(DisplayMode.full.rawValue, forKey: "Scripta.displayMode")
         loadAppIcon()
+        setupMainMenu()
         setupMenuBar()
         showPermissionsWindow()
 
@@ -22,6 +23,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(handleDisplayModeChanged(_:)),
             name: .displayModeChanged, object: nil
         )
+    }
+
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu(title: "Scripta")
+
+        appMenu.addItem(withTitle: "About Scripta", action: #selector(showAbout), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Settings...", action: #selector(showSetup), keyEquivalent: ",")
+        appMenu.addItem(.separator())
+
+        let hideItem = NSMenuItem(title: "Hide Scripta", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        hideItem.target = NSApp
+        appMenu.addItem(hideItem)
+
+        let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthersItem.keyEquivalentModifierMask = [.command, .option]
+        hideOthersItem.target = NSApp
+        appMenu.addItem(hideOthersItem)
+
+        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit Scripta", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        // Standard Edit menu so common shortcuts (⌘C/⌘V/⌘X/⌘A/⌘Z) work in
+        // text fields and the chat panel without us wiring them individually.
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSResponder.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        NSApp.mainMenu = mainMenu
     }
 
     @objc private func handleDisplayModeChanged(_ note: Notification) {
