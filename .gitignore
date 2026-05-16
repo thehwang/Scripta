@@ -23,6 +23,14 @@ launch-plan.html
 # Test data
 TestData/
 
+# Benchmark outputs — never commit anything except the synthetic transcript
+# and the published findings report.
+benchmarks/*
+!benchmarks/.gitkeep
+!benchmarks/synthetic-transcript.md
+!benchmarks/README.md
+!benchmarks/findings.md
+
 # Whisper vendor sources (built locally)
 vendor/
 Sources/CWhisper/lib/*.a
