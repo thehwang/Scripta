@@ -9,6 +9,12 @@ final class SummaryService: ObservableObject {
     private let maxTokens = 512
     private static let baseURL = "http://localhost:11434"
 
+    /// Reserve tokens for prompt scaffolding + output before filling with transcript.
+    /// Empirically: ~150 tokens template + 512 reserved for output + 500 safety margin.
+    private static let promptOverheadTokens = 1200
+    /// Conservative chars-per-token estimate that holds for mixed English/Chinese content.
+    private static let charsPerToken = 3.5
+
     func generateSummary(from entries: [TranscriptEntry], modelName: String) async {
         let transcript = entries.map { "[\($0.speaker)] \($0.text)" }.joined(separator: "\n")
         guard !transcript.isEmpty else {
@@ -27,7 +33,9 @@ final class SummaryService: ObservableObject {
             lastError = ""
         }
 
-        let prompt = buildPrompt(transcript: transcript)
+        let contextTokens = SummaryModelManager.contextWindow(for: modelName)
+        let prompt = buildPrompt(transcript: transcript, contextTokens: contextTokens)
+        mplog("Summary: model=\(modelName) ctx=\(contextTokens) transcriptChars=\(transcript.count) promptChars=\(prompt.count)")
 
         guard let url = URL(string: "\(Self.baseURL)/api/generate") else {
             await MainActor.run {
@@ -40,7 +48,7 @@ final class SummaryService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 120
+        request.timeoutInterval = 300
 
         let body: [String: Any] = [
             "model": modelName,
@@ -51,6 +59,7 @@ final class SummaryService: ObservableObject {
                 "top_p": 0.9,
                 "repeat_penalty": 1.2,
                 "num_predict": maxTokens,
+                "num_ctx": contextTokens,
             ]
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -134,6 +143,9 @@ final class SummaryService: ObservableObject {
             isChatGenerating = true
         }
 
+        let contextTokens = SummaryModelManager.contextWindow(for: modelName)
+        let maxTranscriptChars = max(2_000, Int(Double(contextTokens - Self.promptOverheadTokens) * Self.charsPerToken))
+
         var prompt: String
         if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             prompt = """
@@ -141,7 +153,9 @@ final class SummaryService: ObservableObject {
 
             """
         } else {
-            let truncated = transcript.count > 4000 ? String(transcript.suffix(4000)) : transcript
+            let truncated = transcript.count > maxTranscriptChars
+                ? String(transcript.suffix(maxTranscriptChars))
+                : transcript
             prompt = """
             You are an AI assistant helping analyze a meeting transcript. Answer questions based ONLY on the transcript content. Be concise and specific.
 
@@ -160,6 +174,7 @@ final class SummaryService: ObservableObject {
             }
         }
         prompt += "User: \(question)\nAssistant:"
+        mplog("Chat: model=\(modelName) ctx=\(contextTokens) transcriptChars=\(transcript.count) promptChars=\(prompt.count)")
 
         guard let url = URL(string: "\(Self.baseURL)/api/generate") else {
             await MainActor.run { isChatGenerating = false }
@@ -169,7 +184,7 @@ final class SummaryService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 120
+        request.timeoutInterval = 300
 
         let body: [String: Any] = [
             "model": modelName,
@@ -179,6 +194,7 @@ final class SummaryService: ObservableObject {
                 "temperature": 0.5,
                 "top_p": 0.9,
                 "num_predict": 512,
+                "num_ctx": contextTokens,
             ]
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -230,10 +246,16 @@ final class SummaryService: ObservableObject {
         }
     }
 
-    private func buildPrompt(transcript: String) -> String {
+    private func buildPrompt(transcript: String, contextTokens: Int) -> String {
+        // Size transcript truncation to the model's actual context window.
+        // Reserve overhead for the prompt template + the maxTokens we want for output.
+        let availableTokens = max(1_500, contextTokens - Self.promptOverheadTokens)
+        let maxChars = Int(Double(availableTokens) * Self.charsPerToken)
+
         let truncated: String
-        if transcript.count > 3000 {
-            truncated = String(transcript.suffix(3000))
+        if transcript.count > maxChars {
+            // Take the tail — most action items and decisions tend to land near the end.
+            truncated = String(transcript.suffix(maxChars))
         } else {
             truncated = transcript
         }

@@ -194,15 +194,33 @@ struct SetupView: View {
 
     private func installedModelRow(_ model: OllamaModel) -> some View {
         let isSelected = modelManager.selectedModel == model.name
+        let metadata = SummaryModelManager.recommendedModels.first(where: { $0.name == model.name })
+        let contextLabel: String = {
+            if let metadata { return metadata.contextDescription }
+            let inferredCtx = SummaryModelManager.contextWindow(for: model.name)
+            return inferredCtx >= 1024 ? "\(inferredCtx / 1024)K ctx" : "\(inferredCtx) ctx"
+        }()
+
         return HStack(spacing: 12) {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(isSelected ? .blue : .secondary)
                 .font(.title3)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.name)
-                    .fontWeight(.medium)
-                Text(model.sizeDescription)
+                HStack(spacing: 6) {
+                    Text(model.name)
+                        .fontWeight(.medium)
+                    if metadata?.isNew == true {
+                        Text("NEW")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.green.opacity(0.18), in: Capsule())
+                            .foregroundStyle(.green)
+                    }
+                }
+                Text("\(model.sizeDescription) · \(contextLabel)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -250,8 +268,17 @@ struct SetupView: View {
                             .background(.blue.opacity(0.15), in: Capsule())
                             .foregroundStyle(.blue)
                     }
+                    if model.isNew {
+                        Text("NEW")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.green.opacity(0.18), in: Capsule())
+                            .foregroundStyle(.green)
+                    }
                 }
-                Text("\(model.sizeDescription) — \(model.description)")
+                Text("\(model.sizeDescription) · \(model.contextDescription) — \(model.description)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

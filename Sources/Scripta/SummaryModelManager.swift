@@ -33,8 +33,18 @@ struct RecommendedModel: Identifiable {
     let sizeDescription: String
     let description: String
     let isDefault: Bool
+    let contextTokens: Int
+    let isNew: Bool
 
     var id: String { name }
+
+    var contextDescription: String {
+        if contextTokens >= 1024 {
+            let k = contextTokens / 1024
+            return "\(k)K ctx"
+        }
+        return "\(contextTokens) ctx"
+    }
 }
 
 final class SummaryModelManager: ObservableObject {
@@ -49,34 +59,83 @@ final class SummaryModelManager: ObservableObject {
             name: "qwen2.5:3b",
             displayName: "Qwen 2.5 3B",
             sizeDescription: "~1.9 GB",
-            description: "Best for Chinese + English summaries",
-            isDefault: true
+            description: "Balanced default for Chinese + English",
+            isDefault: true,
+            contextTokens: 32_768,
+            isNew: false
+        ),
+        RecommendedModel(
+            name: "gemma4:e2b",
+            displayName: "Gemma 4 E2B",
+            sizeDescription: "~7.2 GB",
+            description: "Long-meeting specialist with reasoning mode",
+            isDefault: false,
+            contextTokens: 131_072,
+            isNew: true
+        ),
+        RecommendedModel(
+            name: "gemma4:e4b",
+            displayName: "Gemma 4 E4B",
+            sizeDescription: "~9.6 GB",
+            description: "Highest quality, 16 GB+ RAM recommended",
+            isDefault: false,
+            contextTokens: 131_072,
+            isNew: true
         ),
         RecommendedModel(
             name: "qwen2.5:1.5b",
             displayName: "Qwen 2.5 1.5B",
             sizeDescription: "~0.9 GB",
             description: "Lightweight, fast summaries",
-            isDefault: false
+            isDefault: false,
+            contextTokens: 32_768,
+            isNew: false
         ),
         RecommendedModel(
             name: "llama3.2:3b",
             displayName: "Llama 3.2 3B",
             sizeDescription: "~1.9 GB",
             description: "Strong English performance",
-            isDefault: false
+            isDefault: false,
+            contextTokens: 131_072,
+            isNew: false
         ),
         RecommendedModel(
             name: "llama3.2:1b",
             displayName: "Llama 3.2 1B",
             sizeDescription: "~0.7 GB",
             description: "Smallest & fastest",
-            isDefault: false
+            isDefault: false,
+            contextTokens: 131_072,
+            isNew: false
         ),
     ]
 
     private static let modelKey = "Scripta.ollamaModel"
     private static let baseURL = "http://localhost:11434"
+
+    /// Context window in tokens for a given Ollama model name.
+    ///
+    /// Returned value is used as Ollama's `num_ctx` so the model actually sees the
+    /// whole transcript. Without this, Ollama silently caps every model at its
+    /// default 2048 tokens regardless of the model's true capability.
+    ///
+    /// Falls back to a conservative 8K when the model is unknown — still 4x better
+    /// than Ollama's default and safe for any modern small LLM.
+    static func contextWindow(for modelName: String) -> Int {
+        if let known = recommendedModels.first(where: { $0.name == modelName }) {
+            return known.contextTokens
+        }
+        // Heuristic fallback for user-pulled models we don't catalog.
+        let lower = modelName.lowercased()
+        if lower.contains("gemma4") || lower.contains("llama3.2") || lower.contains("llama3.3") {
+            return 131_072
+        }
+        if lower.contains("qwen2.5") || lower.contains("qwen3") {
+            return 32_768
+        }
+        return 8_192
+    }
 
     var isReady: Bool {
         connectionState == .ready && !selectedModel.isEmpty

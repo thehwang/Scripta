@@ -4,6 +4,9 @@
 # One-line install:
 #   curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh | bash
 #
+# With Gemma 4 (extra 7.2 GB, 128K context, recommended for hour-long meetings):
+#   SCRIPTA_INSTALL_GEMMA4=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh)"
+#
 # Or run locally:
 #   bash install.sh                       (auto-download latest release)
 #   bash install.sh Scripta-macos15.zip   (use local zip)
@@ -136,6 +139,12 @@ echo ""
 
 # ── Ollama (AI Summary) ─────────────────────────────────────────────
 DEFAULT_MODEL="qwen2.5:3b"
+GEMMA4_MODEL="gemma4:e2b"
+OLLAMA_MIN_FOR_GEMMA4="0.20.0"
+
+version_ge() {
+    [ "$(printf '%s\n%s' "$1" "$2" | sort -V | head -n1)" = "$2" ]
+}
 
 install_ollama() {
     if command -v ollama >/dev/null 2>&1; then
@@ -197,11 +206,39 @@ pull_default_model() {
     fi
 }
 
+# Optional: pull Gemma 4 E2B for long-meeting / reasoning use cases.
+# Enable with: SCRIPTA_INSTALL_GEMMA4=1 curl -fsSL .../install.sh | bash
+pull_gemma4_model() {
+    [ "${SCRIPTA_INSTALL_GEMMA4:-0}" = "1" ] || return 0
+
+    local ollama_ver
+    ollama_ver=$(ollama --version 2>/dev/null | awk '{print $NF}' | tr -d '[:alpha:]')
+    if [ -n "$ollama_ver" ] && ! version_ge "$ollama_ver" "$OLLAMA_MIN_FOR_GEMMA4"; then
+        warn "Ollama $ollama_ver is older than $OLLAMA_MIN_FOR_GEMMA4 — Gemma 4 requires upgrade."
+        warn "Run: brew upgrade ollama  (then re-run install with SCRIPTA_INSTALL_GEMMA4=1)"
+        return 0
+    fi
+
+    if ollama list 2>/dev/null | grep -q "$GEMMA4_MODEL"; then
+        ok "Gemma 4 model $GEMMA4_MODEL already downloaded"
+    else
+        info "Downloading Gemma 4 ($GEMMA4_MODEL, ~7.2 GB, 128K context)..."
+        info "This is a larger download — recommended for hour-long meetings."
+        if ollama pull "$GEMMA4_MODEL"; then
+            ok "Gemma 4 $GEMMA4_MODEL ready — select it in Scripta's model picker."
+        else
+            warn "Gemma 4 download failed. You can download later in the app or run:"
+            echo "  ollama pull $GEMMA4_MODEL"
+        fi
+    fi
+}
+
 if command -v ollama >/dev/null 2>&1 || command -v brew >/dev/null 2>&1; then
     install_ollama
     if command -v ollama >/dev/null 2>&1; then
         start_ollama_service
         pull_default_model
+        pull_gemma4_model
     fi
 else
     warn "Homebrew not found. To enable AI summaries, install Ollama manually:"
