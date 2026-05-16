@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let translationService = TranslationService()
     private let meetingStore = MeetingStore()
     private var savedFullFrame: NSRect?
+    private var isShowingSetup = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.set(DisplayMode.full.rawValue, forKey: "Scripta.displayMode")
@@ -134,10 +135,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         win.title = "Scripta — AI Model Setup"
         win.setContentSize(NSSize(width: 560, height: 520))
         win.styleMask = [.titled, .closable]
+        win.delegate = self
         win.center()
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window = win
+        isShowingSetup = true
     }
 
     private func showMainWindow() {
@@ -163,10 +166,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             win.title = "Scripta"
             win.setContentSize(NSSize(width: 760, height: 680))
             win.styleMask.insert(.resizable)
+            win.delegate = self
             win.center()
             win.makeKeyAndOrderFront(nil)
             window = win
         }
+        isShowingSetup = false
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -222,5 +227,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             showMainWindow()
         }
+    }
+}
+
+extension AppDelegate: NSWindowDelegate {
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if isShowingSetup {
+            showMainWindow()
+            return false
+        }
+        return true
     }
 }

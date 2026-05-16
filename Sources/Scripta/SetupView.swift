@@ -5,18 +5,41 @@ struct SetupView: View {
     var onComplete: () -> Void
 
     var body: some View {
-        VStack(spacing: 24) {
-            header
-            connectionSection
-            modelSection
-            Spacer(minLength: 0)
-            skipButton
+        VStack(spacing: 0) {
+            topBar
+            VStack(spacing: 24) {
+                header
+                connectionSection
+                modelSection
+                Spacer(minLength: 0)
+                skipButton
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
         }
-        .padding(24)
         .frame(minWidth: 540, minHeight: 520)
         .onAppear {
             Task { await modelManager.checkConnection() }
         }
+    }
+
+    private var topBar: some View {
+        HStack {
+            Spacer()
+            Button {
+                onComplete()
+            } label: {
+                Label("Done", systemImage: "checkmark")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .keyboardShortcut(.cancelAction)
+            .help("Return to Scripta (⎋)")
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
     }
 
     private var header: some View {
