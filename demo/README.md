@@ -68,14 +68,32 @@ Run through this every time you sit down to record:
 1. Activate Scripta (frontmost window). The script will re-activate it
    between cues but starting from focus saves drama.
 2. Press `⌥⌘D` (Option-Command-D).
-3. A big black overlay reads "Start screen recording NOW. Demo begins
-   in 3..." Hit `⌘⇧5` and start your screen recording in that 3-second
-   window.
-4. Watch the cues. At 27.5s the script will flash
+3. Scripta's Gemma 4 model warms up. **First run takes ~80 seconds** — the
+   script will show "Warming gemma4:e2b…" with a heartbeat every 10s.
+   Subsequent runs within Ollama's `keep_alive` window (~5 minutes) are
+   instant. The demo will not begin until the model is hot in RAM, so the
+   Summarize click at ~50s will respond in ~1s instead of ~80s.
+4. When warmup completes, a big black overlay reads "Start screen recording
+   NOW. Demo begins in 3..." Hit `⌘⇧5` and start your screen recording in
+   that 3-second window.
+5. Watch the cues. At 27.5s the script will flash
    "🎤 Speak now: 'Let me try summarizing this meeting.'" — read that line
    into your mic. (The System Audio column is filling itself from the
    voiceover playing through your speakers, no action needed there.)
-5. At 79s the script tells you to stop screen recording.
+6. At 79s the script tells you to stop screen recording.
+
+### Skip the 80-second warmup wait during iteration
+
+If you're tuning cues and doing repeated dry-runs, pre-warm Gemma 4 in a
+Terminal before iterating:
+
+```bash
+ollama run gemma4:e2b "hi"
+```
+
+Wait for the response, then close the prompt with `/bye` or Ctrl-D. The
+model stays loaded for ~5 minutes. Subsequent `⌥⌘D` runs will skip the
+long warmup and proceed to the countdown almost instantly.
 
 ## If a take is bad
 

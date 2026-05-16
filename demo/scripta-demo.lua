@@ -170,12 +170,43 @@ end
 
 -- ── Demo lifecycle ───────────────────────────────────────────────────────
 
-local function warmOllama()
-    log("warming Ollama (Gemma 4)...")
-    hs.task.new("/usr/bin/curl", nil, {
-        "-s", "-X", "POST", "http://localhost:11434/api/generate",
-        "-d", string.format('{"model":"%s","prompt":"hi","stream":false}', CONFIG.gemmaModel),
-    }):start()
+-- Async warmup the Ollama model so the first Summarize click during the demo
+-- is hot (~1s response) instead of cold (~80s while Gemma 4's 7.2 GB weights
+-- load into RAM). The callback fires when the warmup request completes; we
+-- also enforce a hard timeout so a misbehaving Ollama can't stall the demo
+-- forever.
+local function warmOllama(onComplete)
+    log("warming Ollama (" .. CONFIG.gemmaModel .. ")...")
+    local startedAt = hs.timer.secondsSinceEpoch()
+    local fired = false
+
+    local function finish(reason)
+        if fired then return end
+        fired = true
+        local elapsed = hs.timer.secondsSinceEpoch() - startedAt
+        log(string.format("warmup %s (%.1fs)", reason, elapsed))
+        if onComplete then onComplete(elapsed) end
+    end
+
+    local task = hs.task.new("/usr/bin/curl", function(exitCode)
+        finish("completed exit=" .. tostring(exitCode))
+    end, {
+        "-s", "--max-time", "100",
+        "-X", "POST", "http://localhost:11434/api/generate",
+        "-d", string.format('{"model":"%s","prompt":"hi","stream":false,"options":{"num_predict":1}}',
+            CONFIG.gemmaModel),
+    })
+    task:start()
+
+    -- Hard 100s ceiling — first cold load is ~80s on Apple Silicon. If we
+    -- exceed this, something is wrong (Ollama down, model not pulled, etc.)
+    hs.timer.doAfter(100, function()
+        if not fired then
+            log("WARN: warmup timed out after 100s — Ollama may be down or model not pulled")
+            pcall(function() task:terminate() end)
+            finish("TIMEOUT")
+        end
+    end)
 end
 
 local function abortDemo()
@@ -313,19 +344,40 @@ function M.runDemo()
     state.timers = {}
 
     scripta:activate()
-    warmOllama()
 
-    -- 3-second countdown so user can switch to ⌘⇧5 and start screen recording.
-    bigAlert("Start screen recording NOW.\nDemo begins in 3...", {white=0, alpha=0.9}, 1)
-    hs.timer.doAfter(1, function() if state.running then bigAlert("...2", nil, 1) end end)
-    hs.timer.doAfter(2, function() if state.running then bigAlert("...1", nil, 1) end end)
-    hs.timer.doAfter(3, function()
+    -- Warm Ollama BEFORE the countdown so the model is hot in memory by the
+    -- time we click Summarize at ~50s into the voiceover. First cold load of
+    -- Gemma 4 takes ~80s; subsequent runs within Ollama's keep_alive window
+    -- (~5 min) are instant. We display progress so the user knows what's
+    -- happening during the otherwise-silent wait.
+    bigAlert("Warming " .. CONFIG.gemmaModel ..
+             "...\n(first run ~80s, repeat runs instant)",
+             {white=0, alpha=0.9}, 5)
+
+    -- Show a heartbeat every 10s so the user knows we're not frozen.
+    local heartbeatTimer
+    heartbeatTimer = hs.timer.doEvery(10, function()
         if not state.running then return end
-        if not startVoiceover() then
-            state.running = false
-            return
-        end
-        runCues()
+        hs.alert.show("...still warming Gemma 4", 1)
+    end)
+    table.insert(state.timers, heartbeatTimer)
+
+    warmOllama(function(elapsed)
+        if heartbeatTimer then heartbeatTimer:stop() end
+        if not state.running then return end
+
+        bigAlert(string.format("✓ Model warm (%.1fs)\nStart screen recording NOW. Demo begins in 3...", elapsed),
+                 {white=0, alpha=0.9}, 1)
+        hs.timer.doAfter(1, function() if state.running then bigAlert("...2", nil, 1) end end)
+        hs.timer.doAfter(2, function() if state.running then bigAlert("...1", nil, 1) end end)
+        hs.timer.doAfter(3, function()
+            if not state.running then return end
+            if not startVoiceover() then
+                state.running = false
+                return
+            end
+            runCues()
+        end)
     end)
 end
 
