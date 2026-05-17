@@ -76,11 +76,26 @@ Run through this every time you sit down to record:
 4. When warmup completes, a big black overlay reads "Start screen recording
    NOW. Demo begins in 3..." Hit `⌘⇧5` and start your screen recording in
    that 3-second window.
-5. Watch the cues. At 27.5s the script will flash
-   "🎤 Speak now: 'Let me try summarizing this meeting.'" — read that line
-   into your mic. (The System Audio column is filling itself from the
-   voiceover playing through your speakers, no action needed there.)
-6. At 79s the script tells you to stop screen recording.
+5. **Take your audio cues from the voiceover, not from on-screen alerts.**
+   By default `CONFIG.silentRecording = true`, so no HUDs pollute the
+   take. The two beats you handle yourself:
+   - **~27.5s — read your mic line.** When the narrator says
+     *"I'll record a short clip…"*, immediately say
+     *"Let me try summarizing this meeting."* into your mic. (You can
+     also watch Scripta's System Audio column — when the words
+     "I'll record a short clip" appear there, that's your cue.)
+   - **~79s — stop the screen recording.** When the voiceover audio
+     stops playing through your speakers, hit `⌘⌃Esc` (or click the
+     menubar stop icon) to end the take.
+6. The System Audio column fills itself from the voiceover playing
+   through your speakers — no action needed there.
+
+### Want the visual cues back for dry-run testing?
+
+Open `scripta-demo.lua`, set `CONFIG.silentRecording = false`, reload
+Hammerspoon. You'll get the green "🎤 Speak now" banner at 27.5s and
+the "✓ Demo complete" banner at 79s. Flip it back to `true` before the
+real take so they don't end up in your recording.
 
 ### Skip the 80-second warmup wait during iteration
 

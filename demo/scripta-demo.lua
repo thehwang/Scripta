@@ -57,6 +57,15 @@ local CONFIG = {
     -- App name to focus when showTerminalCue fires. Must exactly match the
     -- app bundle name (e.g. "Terminal", "iTerm", "Warp", "Ghostty").
     terminalAppName = "Terminal",
+
+    -- When true, suppress all alerts/HUDs that would otherwise appear during
+    -- the demo (Speak prompt, Demo complete banner). Pre-demo alerts (warmup
+    -- heartbeat, 3-2-1 countdown) still fire because they're emitted before
+    -- you've hit ⌘⇧5 to start recording.
+    --
+    -- Set to false during dry-run iteration if you want the visual cues; flip
+    -- back to true before the actual take.
+    silentRecording = true,
 }
 
 -- ── State (so abort can clean up) ────────────────────────────────────────
@@ -269,8 +278,15 @@ local function runCues()
     end)
 
     at(c.promptUserToSpeak, function()
-        bigAlert("🎤 Speak now:\n\"Let me try summarizing this meeting.\"",
-            {red=0.15, green=0.55, blue=0.25, alpha=0.92}, 4)
+        if CONFIG.silentRecording then
+            -- Silent take: rely on the voiceover audio cue. Around this beat
+            -- the narrator says "I'll record a short clip..." — speak the
+            -- demo line right after that.
+            log("(silent) speak now: 'Let me try summarizing this meeting.'")
+        else
+            bigAlert("🎤 Speak now:\n\"Let me try summarizing this meeting.\"",
+                {red=0.15, green=0.55, blue=0.25, alpha=0.92}, 4)
+        end
     end)
 
     at(c.clickStop, function()
@@ -320,8 +336,15 @@ local function runCues()
     end)
 
     at(c.endAlert, function()
-        bigAlert("✓ Demo complete — STOP screen recording now",
-            {red=0.1, green=0.4, blue=0.2, alpha=0.9}, 5)
+        if CONFIG.silentRecording then
+            -- Silent take: when the voiceover audio stops playing, that's
+            -- your cue to stop the screen recording (⌘⌃Esc or click the
+            -- menubar stop icon).
+            log("(silent) demo complete — stop screen recording now")
+        else
+            bigAlert("✓ Demo complete — STOP screen recording now",
+                {red=0.1, green=0.4, blue=0.2, alpha=0.9}, 5)
+        end
         state.running = false
     end)
 end
