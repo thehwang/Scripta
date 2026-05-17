@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="build/AppIcon.iconset/icon_256x256.png" width="128" alt="Scripta icon">
+  <img src="screenshots/scripta-icon-256.png" width="128" alt="Scripta icon">
 </p>
 
 <h1 align="center">Scripta</h1>
