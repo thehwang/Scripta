@@ -30,6 +30,15 @@
   <img src="screenshots/full_mode.png" width="720" alt="Scripta — Full mode with live transcription and bilingual translation">
 </p>
 
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=owW2F3VU_n0">
+    <img src="https://img.youtube.com/vi/owW2F3VU_n0/maxresdefault.jpg"
+         width="720" alt="Watch the Scripta v3.2 + Gemma 4 demo on YouTube">
+  </a>
+  <br>
+  <em>▶ <a href="https://www.youtube.com/watch?v=owW2F3VU_n0">90-second walkthrough: dual-channel capture → Gemma 4 summary with full 128K context</a></em>
+</p>
+
 ---
 
 Scripta is a native macOS app that captures **both your microphone and system audio** during meetings, transcribes them in real-time, and generates AI-powered summaries — all running **100% locally** on your Mac. No cloud. No subscriptions. No data leaves your machine.
@@ -93,6 +102,14 @@ Live dual-channel transcription with bilingual translation. The "Remote" channel
 
 After recording, generate an AI summary with key points and action items using a local Ollama model. The Ask AI chat panel lets you query your transcript in natural language.
 
+### AI Model Setup — Pick your local LLM
+
+<p align="center">
+  <img src="screenshots/model-select.png" width="540" alt="Scripta model picker — Gemma 4 E2B with NEW badge and 128K ctx indicator">
+</p>
+
+Choose between Qwen 2.5 (fast, 1.8 GB) for everyday meetings or Gemma 4 (high quality, 7.2 GB) for hour-long sessions. Each row surfaces the model's **true context window** — Scripta now passes that value to Ollama via `num_ctx`, so a 60-minute meeting actually gets summarized end-to-end rather than the last five minutes. Recommended models can be pulled with one click.
+
 ### Minimal Mode — Floating Captions
 
 <p align="center">
@@ -125,6 +142,14 @@ This single command will:
 - Pull the default AI model (`qwen2.5:3b`)
 - Download the Whisper speech model (`ggml-base.bin`, ~142 MB)
 - Launch Scripta
+
+### One-Line Install — with Gemma 4 (recommended for long meetings)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh | SCRIPTA_INSTALL_GEMMA4=1 bash
+```
+
+Same as above but also pulls **Gemma 4 E2B** (~7.2 GB extra). Recommended if your meetings frequently exceed 30 minutes — Gemma 4's **128K context window** summarizes the full transcript in one pass with no chunking. The default `qwen2.5:3b` is still installed alongside, so you can switch between them anytime in Settings → AI Model.
 
 ### Manual Install
 
@@ -174,9 +199,16 @@ Scripta/
 │   │   └── ...
 │   ├── ScriptaCore/          # Shared types (TranscriptEntry, logging)
 │   └── CWhisper/             # whisper.cpp C bridging (systemLibrary)
+├── benchmarks/               # Reproducible model + context-window benchmarks
+│   ├── synthetic-transcript.md  # Fixture: 60-min fictional all-hands meeting
+│   └── findings.md           # Qualitative analysis of each model's output
+├── demo/                     # Hammerspoon automation that drives the UI
+│   ├── scripta-demo.lua      # through the v3.2 launch demo (timing-synced
+│   └── README.md             # to a pre-recorded voiceover for repeatable takes)
 ├── screenshots/              # App screenshots for README
 ├── scripts/
-│   └── install.sh            # One-line installer
+│   ├── install.sh            # One-line installer
+│   └── benchmark_models.sh   # Run any installed Ollama model against fixture
 ├── Resources/
 │   └── AppIcon.icns
 ├── Makefile                  # Build, install, deploy targets
