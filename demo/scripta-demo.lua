@@ -11,8 +11,9 @@
 --   4. voiceover-final.mp3 exists at the path configured below.
 --
 -- Setup:
---   Add this line to ~/.hammerspoon/init.lua (adjust path to your repo):
---     dofile(os.getenv("HOME") .. "/Cursor/cdl_cursor_rules/MeetingPilot/demo/scripta-demo.lua")
+--   Add this line to ~/.hammerspoon/init.lua (adjust path to your clone):
+--     local SCRIPTA_REPO = os.getenv("HOME") .. "/path/to/Scripta"
+--     dofile(SCRIPTA_REPO .. "/demo/scripta-demo.lua")
 --   Then reload Hammerspoon config (menu bar → Reload Config).
 --
 -- Hotkeys:
@@ -23,10 +24,23 @@
 
 local M = {}
 
+-- Resolve the ElevenLabs voiceover path. Default: ../blog/voiceover-final.mp3
+-- relative to this script (i.e. blog/voiceover-final.mp3 inside your Scripta
+-- clone). Override with $SCRIPTA_DEMO_VOICEOVER if you keep the file elsewhere.
+local function resolveVoiceoverPath()
+    local override = os.getenv("SCRIPTA_DEMO_VOICEOVER")
+    if override and override ~= "" then return override end
+    local src = debug.getinfo(1, "S").source
+    if src:sub(1, 1) == "@" then src = src:sub(2) end
+    local dir = src:match("(.*/)") or ""
+    return dir .. "../blog/voiceover-final.mp3"
+end
+
 -- ── Configuration ────────────────────────────────────────────────────────
 local CONFIG = {
-    -- Absolute path to the ElevenLabs voiceover. Update if you move the repo.
-    voiceoverPath = os.getenv("HOME") .. "/Cursor/cdl_cursor_rules/MeetingPilot/blog/voiceover-final.mp3",
+    -- Path to the ElevenLabs voiceover audio that drives the demo timing.
+    -- See resolveVoiceoverPath() above for default + override behavior.
+    voiceoverPath = resolveVoiceoverPath(),
 
     -- The Ollama model the demo should select. Must match what's in
     -- SummaryModelManager.recommendedModels and `ollama list`.

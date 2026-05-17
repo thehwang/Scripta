@@ -22,19 +22,25 @@ brew install --cask hammerspoon
 #    System Settings → Privacy & Security → Accessibility → enable Hammerspoon.
 
 # 3. Wire this script into your Hammerspoon config.
+#    Replace SCRIPTA_REPO with the absolute path to your Scripta clone.
 mkdir -p ~/.hammerspoon
+SCRIPTA_REPO="$HOME/path/to/Scripta"   # <-- edit this
 cat >> ~/.hammerspoon/init.lua <<EOF
 -- Scripta demo automation
-dofile(os.getenv("HOME") .. "/Cursor/cdl_cursor_rules/MeetingPilot/demo/scripta-demo.lua")
+dofile("$SCRIPTA_REPO/demo/scripta-demo.lua")
 EOF
 
 # 4. Reload Hammerspoon config (menu bar icon → Reload Config).
 #    You should see: "Scripta demo loaded — ⌥⌘D to run"
 ```
 
-Adjust the path in step 3 if your `cdl_cursor_rules` checkout lives
-elsewhere. The script also exposes `CONFIG.voiceoverPath` at the top of
-`scripta-demo.lua` — edit that line if you move the mp3.
+By default the script looks for the voiceover at
+`<repo>/blog/voiceover-final.mp3` (resolved relative to its own location).
+Override with an environment variable if you keep the mp3 elsewhere:
+
+```bash
+export SCRIPTA_DEMO_VOICEOVER="$HOME/Recordings/scripta-voiceover.mp3"
+```
 
 ## Pre-run checklist
 
