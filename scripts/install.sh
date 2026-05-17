@@ -5,7 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh | bash
 #
 # With Gemma 4 (extra 7.2 GB, 128K context, recommended for hour-long meetings):
-#   SCRIPTA_INSTALL_GEMMA4=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh)"
+#   curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh | SCRIPTA_INSTALL_GEMMA4=1 bash
 #
 # Or run locally:
 #   bash install.sh                       (auto-download latest release)
@@ -207,7 +207,8 @@ pull_default_model() {
 }
 
 # Optional: pull Gemma 4 E2B for long-meeting / reasoning use cases.
-# Enable with: SCRIPTA_INSTALL_GEMMA4=1 curl -fsSL .../install.sh | bash
+# Enable with: curl -fsSL .../install.sh | SCRIPTA_INSTALL_GEMMA4=1 bash
+# (env var must attach to `bash`, not `curl`, so the script inherits it.)
 pull_gemma4_model() {
     [ "${SCRIPTA_INSTALL_GEMMA4:-0}" = "1" ] || return 0
 
