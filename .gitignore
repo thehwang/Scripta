@@ -23,13 +23,16 @@ launch-plan.html
 # Test data
 TestData/
 
-# Benchmark outputs — never commit anything except the synthetic transcript
-# and the published findings report.
+# Benchmark outputs — never commit per-run timestamped result folders.
+# Only published artifacts (synthetic transcript, findings report,
+# multimodal demo) are intentionally tracked.
 benchmarks/*
 !benchmarks/.gitkeep
-!benchmarks/synthetic-transcript.md
 !benchmarks/README.md
+!benchmarks/synthetic-transcript.md
 !benchmarks/findings.md
+!benchmarks/multimodal/
+!benchmarks/multimodal/**
 
 # Whisper vendor sources (built locally)
 vendor/
