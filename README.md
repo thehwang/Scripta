@@ -39,6 +39,13 @@
   <em>▶ <a href="https://www.youtube.com/watch?v=owW2F3VU_n0">90-second walkthrough: dual-channel capture → Gemma 4 summary with full 128K context</a></em>
 </p>
 
+<p align="center">
+  <strong>Read the v3.2 writeup →</strong>
+  <a href="https://dev.to/thehwang/i-asked-gemma-4-to-summarize-it-said-the-transcript-looked-truncated-it-was-right-4pff"><em>"I asked Gemma 4 to summarize. It said the transcript looked truncated. It was right."</em></a>
+  <br>
+  <sub>Reproducible benchmarks, a 2,048-token Ollama default that silently broke every summary, and a calibration finding on Gemma 4 vision at E2B size. Submitted to the <a href="https://dev.to/challenges/google-gemma-2026-05-06">Dev.to Build with Gemma 4 challenge</a>.</sub>
+</p>
+
 ---
 
 Scripta is a native macOS app that captures **both your microphone and system audio** during meetings, transcribes them in real-time, and generates AI-powered summaries — all running **100% locally** on your Mac. No cloud. No subscriptions. No data leaves your machine.
