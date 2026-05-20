@@ -1,0 +1,13 @@
+[12:07:53] James: Thanks Sarah. Hey everyone. Three buckets from product side. Customers, roadmap, and pricing.
+[12:08:02] James: Customers first. We finished Q2 with twelve enterprise customers, up from nine at the end of Q1.
+[12:08:11] James: Three new logos: Boeing Aerospace Manufacturing, Amazon Robotics, and FedEx Ground.
+[12:08:20] James: Boeing is a fifty unit deployment for inspection assistance at the Everett facility. Amazon is a thirty unit fulfillment pilot in Stockton.
+[12:08:31] James: FedEx is starting with eight units in their Memphis package handling line. Smaller in scope but they are a strategic logo for us.
+[12:08:42] James: One loss to mention. We did not win Toyota Manufacturing North America. They went with a Japanese vendor whose name I will not say to avoid jinxing.
+[12:08:54] James: The feedback was that we were thirty four percent more expensive on a three-year TCO basis. Hard to compete on price when the alternative is subsidized.
+[12:09:06] James: Which brings me to the second topic. Pricing.
+[12:09:14] James: Effective September first, we are raising list price by fifteen percent across the SKU set.
+[12:09:23] James: That applies to new logos and to renewals on contracts signed after September first.
+[12:09:32] James: Existing customers under contract see no change until renewal. Lisa will say more on how that lands with the renewal pipeline.
+[12:09:42] James: Why the increase. Three reasons. We have proven enterprise willingness to pay this quarter.
+[12:09:52] James: Cost of goods is up nine percent year over year, mostly on Jetson hardware and rare earth ma

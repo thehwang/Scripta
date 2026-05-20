@@ -25,7 +25,7 @@ TestData/
 
 # Benchmark outputs — never commit per-run timestamped result folders.
 # Only published artifacts (synthetic transcript, findings report,
-# multimodal demo) are intentionally tracked.
+# multimodal demo, calibration ablation harness) are intentionally tracked.
 benchmarks/*
 !benchmarks/.gitkeep
 !benchmarks/README.md
@@ -33,6 +33,14 @@ benchmarks/*
 !benchmarks/findings.md
 !benchmarks/multimodal/
 !benchmarks/multimodal/**
+!benchmarks/calibration-ablation/
+!benchmarks/calibration-ablation/**
+# Within the ablation dir: per-run raw outputs and intermediate JSON are
+# still excluded; the published witness artifacts (results.jsonl +
+# classification-report.md) are tracked so the follow-up Dev.to post can
+# point to them directly.
+benchmarks/calibration-ablation/outputs/
+benchmarks/calibration-ablation/classification.json
 
 # Whisper vendor sources (built locally)
 vendor/

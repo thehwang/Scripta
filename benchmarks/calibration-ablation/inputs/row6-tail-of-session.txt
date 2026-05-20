@@ -1,0 +1,14 @@
+[12:23:45] Robert: I have one. With the fifteen percent pricing increase, do we expect any deals in active pipeline to fall out?
+[12:23:56] James: Short answer no. Long answer, we briefed the top ten deals last week, all of which are quoted at current pricing.
+[12:24:08] James: New deals after September first start at new pricing. We do not regrade quoted deals. So zero impact on the in flight pipeline.
+[12:24:20] Robert: Perfect, thanks.
+[12:24:24] Sarah: One more, Tomás.
+[12:24:29] Tomás: Quick one for Marcus. The tech radar exercise. Does that include retiring things, or just adopting new things.
+[12:24:39] Marcus: Both. Retire is the most important category in fact. I'd rather we retire two things than adopt five.
+[12:24:50] Marcus: Specifically I'd love a frank conversation about whether we still need both Python and Rust in the core stack, or whether we should commit to one for the new components.
+[12:25:03] Marcus: That conversation is at the offsite July tenth. Come ready.
+[12:25:10] Sarah: Okay we are at time. Thank you everyone. A few quick reminders.
+[12:25:19] Sarah: Recording goes out by end of day, transcript and action items in the recap email by Anna.
+[12:25:30] Sarah: CAB this Wednesday, Lighthouse readiness July eight, launch July fifteen, offsite July ten in Boston, Cambridge move August eleven.
+[12:25:43] Sarah: Engineering offsite I just said is July ten. The Boston regional summer party is July nineteen, save the date in your calendar.
+[12:25:55] Sarah: Have a great rest of your day. Thanks for the work everyone. See you in two weeks at the team-level reviews.
