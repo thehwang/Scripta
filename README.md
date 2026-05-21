@@ -46,6 +46,14 @@
   <sub>Reproducible benchmarks, a 2,048-token Ollama default that silently broke every summary, and a calibration finding on Gemma 4 vision at E2B size. Submitted to the <a href="https://dev.to/challenges/google-gemma-2026-05-06">Dev.to Build with Gemma 4 challenge</a>.</sub>
 </p>
 
+<p align="center">
+  <sub>
+    <strong>Follow-up ablation:</strong> <a href="https://dev.to/thehwang/gemma-4-wrote-three-summaries-in-one-response-the-middle-one-was-a-self-disclaimer-3pj9"><em>"Gemma 4 wrote three summaries in one response. The middle one was a self-disclaimer."</em></a> — 15-run ablation falsifying the original "trained calibration" framing in favour of a configuration-deterministic multi-pass pattern at <code>num_ctx=2048</code>. Harness: <a href="benchmarks/calibration-ablation/"><code>benchmarks/calibration-ablation/</code></a>.
+    <br>
+    <strong>Companion replication:</strong> <a href="https://dev.to/wildeconforce">@wildeconforce</a> independently reproduced the <code>num_ctx=2048</code> truncation default on RTX 4060 8GB / Windows / CUDA, matching wall-time ratios within 10% of the Mac 16GB MPS numbers in <code>benchmarks/</code>, and surfaced a fixture-shape-dependent inversion of the <code>num_ctx</code> quality curve. Production-deployment writeup: <a href="https://dev.to/wildeconforce/production-deployment-of-gemma-4-on-an-8gb-gpu-what-thehwang-and-i-reproduced-across-two-hosts-2783"><em>"Production Deployment of Gemma 4 on an 8GB GPU"</em></a>.
+  </sub>
+</p>
+
 ---
 
 Scripta is a native macOS app that captures **both your microphone and system audio** during meetings, transcribes them in real-time, and generates AI-powered summaries — all running **100% locally** on your Mac. No cloud. No subscriptions. No data leaves your machine.
