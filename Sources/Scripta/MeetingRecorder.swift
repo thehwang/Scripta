@@ -118,6 +118,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
             }
         }
 
+        whisperEngine.language = recognitionLanguage.components(separatedBy: "-").first?.lowercased() ?? "en"
         whisperEngine.onTranscript = { [weak self] text in
             guard let self, self.state == .recording, !self.micMuted else { return }
             self.appendWhisperTranscript(text)
@@ -309,6 +310,10 @@ final class MeetingRecorder: NSObject, ObservableObject {
             mplog("System audio: buffer #\(systemBufferCount) frames=\(pcm.frameLength) rate=\(pcm.format.sampleRate) ch=\(pcm.format.channelCount) fmt=\(pcm.format.commonFormat.rawValue)")
         }
 
+        // Write original quality (48 kHz) to the audio file.
+        writeSystemAudio(pcm)
+
+        // Downsample to 16 kHz only for SFSpeech recognition.
         let buffer: AVAudioPCMBuffer
         if pcm.format.sampleRate == recognitionFormat.sampleRate &&
             pcm.format.channelCount == recognitionFormat.channelCount &&
@@ -318,8 +323,6 @@ final class MeetingRecorder: NSObject, ObservableObject {
             guard let converted = convertToRecognitionFormat(pcm) else { return }
             buffer = converted
         }
-
-        writeSystemAudio(buffer)
 
         if !systemRecognitionStarted && state == .recording {
             systemRecognitionStarted = true
@@ -676,9 +679,9 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
     private static let audioFileSettings: [String: Any] = [
         AVFormatIDKey: kAudioFormatMPEG4AAC,
-        AVSampleRateKey: 16_000,
+        AVSampleRateKey: 48_000,
         AVNumberOfChannelsKey: 1,
-        AVEncoderBitRateKey: 48_000,
+        AVEncoderBitRateKey: 128_000,
     ]
 
     private func startAudioWriters() {
@@ -728,7 +731,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         output.frameLength = outFrames
 
         guard let outPtr = output.floatChannelData?[0] else { return }
-        if abs(ratio - 1.0) < 0.001 && buffer.format.channelCount == 1 {
+        if abs(ratio - 1.0) < 0.001 {
             memcpy(outPtr, ch0, Int(frames) * MemoryLayout<Float>.size)
         } else {
             let srcCount = Int(frames)
