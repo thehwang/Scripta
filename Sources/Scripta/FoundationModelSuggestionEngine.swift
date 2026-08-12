@@ -20,11 +20,17 @@ struct MeetingSuggestionOutput {
 
 @available(macOS 26, *)
 enum FoundationModelSuggestionEngine {
-    static var isAvailable: Bool {
-        if case .available = SystemLanguageModel.default.availability {
-            return true
+    static func availabilityStatus() -> (enabled: Bool, reason: String) {
+        switch SystemLanguageModel.default.availability {
+        case .available:
+            return (true, "Apple Intelligence model available")
+        case .unavailable(let reason):
+            return (false, "Apple Intelligence unavailable: \(reason)")
         }
-        return false
+    }
+
+    static var isAvailable: Bool {
+        availabilityStatus().enabled
     }
 
     static func evaluate(context: String) async throws -> MeetingSuggestion? {

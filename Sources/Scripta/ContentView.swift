@@ -114,7 +114,10 @@ struct ContentView: View {
             }
         }
         .task { await summaryModelManager.checkConnection() }
-        .onAppear { refreshPermissionStatus() }
+        .onAppear {
+            refreshPermissionStatus()
+            suggestionCoordinator.logAvailabilityIfNeeded()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshPermissionStatus()
         }

@@ -18,12 +18,23 @@ final class SuggestionCoordinator: ObservableObject {
     private let recentQuestionLimit = 8
 
     var isEnabled: Bool {
+        Self.availabilityStatus().enabled
+    }
+
+    static func availabilityStatus() -> (enabled: Bool, reason: String) {
         #if compiler(>=6.0) && canImport(FoundationModels)
         if #available(macOS 26, *) {
-            return FoundationModelSuggestionEngine.isAvailable
+            return FoundationModelSuggestionEngine.availabilityStatus()
         }
+        return (false, "requires macOS 26")
+        #else
+        return (false, "Foundation Models not compiled — build with Xcode 26+ (Swift 6 SDK)")
         #endif
-        return false
+    }
+
+    func logAvailabilityIfNeeded() {
+        let status = Self.availabilityStatus()
+        mplog("Suggestions: \(status.enabled ? "enabled" : "disabled") — \(status.reason)")
     }
 
     func reset() {

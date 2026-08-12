@@ -7,6 +7,23 @@ WHISPER_DIR=vendor/whisper.cpp
 WHISPER_BUILD=$(WHISPER_DIR)/build-static
 WHISPER_LIB=Sources/CWhisper/lib/libwhisper.a
 
+# Meeting suggestions need Foundation Models → Xcode 26+ SDK
+ifeq ($(wildcard /Applications/Xcode_26.6.app),/Applications/Xcode_26.6.app)
+  DEVELOPER_DIR := /Applications/Xcode_26.6.app/Contents/Developer
+else ifneq ($(wildcard /Applications/Xcode_26.app),)
+  DEVELOPER_DIR := /Applications/Xcode_26.app/Contents/Developer
+else
+  DEVELOPER_DIR :=
+endif
+
+ifneq ($(DEVELOPER_DIR),)
+  SWIFT := DEVELOPER_DIR="$(DEVELOPER_DIR)" swift
+  $(info Using $(DEVELOPER_DIR) for Swift build (Foundation Models enabled))
+else
+  SWIFT := swift
+  $(info Using default Xcode — meeting suggestions require Xcode 26+)
+endif
+
 .PHONY: build run install setup-cert test clean reset-permissions whisper-lib
 
 whisper-lib: $(WHISPER_LIB)
@@ -42,7 +59,7 @@ $(WHISPER_LIB):
 	@echo "whisper.cpp static library built: $(WHISPER_LIB)"
 
 build: $(WHISPER_LIB)
-	swift build
+	$(SWIFT) build
 
 setup-cert:
 	@bash scripts/setup-cert.sh
@@ -50,8 +67,8 @@ setup-cert:
 run: setup-cert
 	@set -e; \
 	echo "Building ..."; \
-	swift build 2>&1; \
-	BIN_PATH="$$(swift build --show-bin-path)"; \
+	$(SWIFT) build 2>&1; \
+	BIN_PATH="$$($(SWIFT) build --show-bin-path)"; \
 	SRC_BIN="$$BIN_PATH/$(APP)"; \
 	CONTENTS_DIR="$(DEV_BUNDLE)/Contents"; \
 	MACOS_DIR="$$CONTENTS_DIR/MacOS"; \
@@ -83,8 +100,8 @@ run: setup-cert
 install: setup-cert
 	@set -e; \
 	echo "Building release binary ..."; \
-	swift build -c release; \
-	BIN_PATH="$$(swift build -c release --show-bin-path)"; \
+	$(SWIFT) build -c release; \
+	BIN_PATH="$$($(SWIFT) build -c release --show-bin-path)"; \
 	APP_BUNDLE="$(INSTALL_DIR)/$(APP).app"; \
 	CONTENTS_DIR="$$APP_BUNDLE/Contents"; \
 	MACOS_DIR="$$CONTENTS_DIR/MacOS"; \
@@ -105,8 +122,8 @@ install: setup-cert
 deploy: setup-cert
 	@set -e; \
 	echo "Building release binary for deployment ..."; \
-	swift build -c release 2>&1; \
-	BIN_PATH="$$(swift build -c release --show-bin-path)"; \
+	$(SWIFT) build -c release 2>&1; \
+	BIN_PATH="$$($(SWIFT) build -c release --show-bin-path)"; \
 	DEPLOY_DIR="build/deploy"; \
 	APP_DIR="$$DEPLOY_DIR/$(APP).app/Contents"; \
 	MACOS_DIR="$$APP_DIR/MacOS"; \
@@ -133,7 +150,7 @@ deploy: setup-cert
 	echo "Zip: build/$(APP)-deploy.zip ($$(du -h ../$(APP)-deploy.zip | cut -f1))"
 
 test:
-	swift test
+	$(SWIFT) test
 
 clean:
 	rm -rf .build build vendor Sources/CWhisper/lib/*.a
