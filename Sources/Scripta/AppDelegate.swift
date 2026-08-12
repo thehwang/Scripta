@@ -179,7 +179,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         win.contentViewController = hosting
         win.title = "Scripta — AI Model Setup"
         win.setContentSize(NSSize(width: 560, height: 520))
-        win.styleMask = [.titled, .closable]
+        win.styleMask = [.titled, .closable, .resizable]
+        win.minSize = NSSize(width: 540, height: 400)
         win.delegate = self
         win.center()
         win.makeKeyAndOrderFront(nil)

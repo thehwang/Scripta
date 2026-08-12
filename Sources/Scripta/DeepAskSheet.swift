@@ -39,11 +39,11 @@ struct DeepAskSheet: View {
         HStack {
             Image(systemName: "sparkles")
                 .foregroundStyle(Theme.accent)
-            Text("深问")
+            Text("Ask deeper")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
             Spacer()
-            Button("关闭") { onDismiss() }
+            Button("Close") { onDismiss() }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.textMuted)
         }
@@ -55,7 +55,7 @@ struct DeepAskSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("问题")
+                    Text("Question")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.textMuted)
                     Text(question)
@@ -68,7 +68,7 @@ struct DeepAskSheet: View {
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10))
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("回答")
+                    Text("Answer")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.textMuted)
 
@@ -98,12 +98,12 @@ struct DeepAskSheet: View {
     private var footer: some View {
         HStack {
             if !isModelReady {
-                Text("Ollama 模型未就绪")
+                Text("Ollama model not ready")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.textMuted)
             }
             Spacer()
-            Button("完成") { onDismiss() }
+            Button("Done") { onDismiss() }
                 .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 16)
@@ -119,7 +119,7 @@ struct DeepAskSheet: View {
 
     private func runDeepAsk() async {
         guard isModelReady else {
-            errorMessage = "请先配置并连接 Ollama 模型。"
+            errorMessage = "Configure and connect an Ollama model first."
             return
         }
 

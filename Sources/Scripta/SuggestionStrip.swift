@@ -23,7 +23,7 @@ struct SuggestionStrip: View {
                     .padding(.top, 2)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("建议提问")
+                    Text("Suggested question")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.textMuted)
 
@@ -43,11 +43,11 @@ struct SuggestionStrip: View {
             }
 
             HStack(spacing: 8) {
-                actionButton("复制", systemImage: "doc.on.doc") {
+                actionButton("Copy", systemImage: "doc.on.doc") {
                     copyToPasteboard(suggestion.question)
                 }
-                actionButton("深问", systemImage: "sparkles", accent: true, onDeepAsk)
-                actionButton("忽略", systemImage: "xmark") { onDismiss() }
+                actionButton("Ask deeper", systemImage: "sparkles", accent: true, onDeepAsk)
+                actionButton("Dismiss", systemImage: "xmark") { onDismiss() }
             }
         }
         .padding(.horizontal, 14)

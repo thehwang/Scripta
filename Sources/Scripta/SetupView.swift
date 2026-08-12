@@ -7,15 +7,17 @@ struct SetupView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
-            VStack(spacing: 24) {
-                header
-                connectionSection
-                modelSection
-                Spacer(minLength: 0)
-                skipButton
+            ScrollView {
+                VStack(spacing: 24) {
+                    header
+                    connectionSection
+                    modelSection
+                    skipButton
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
         }
         .frame(minWidth: 540, minHeight: 520)
         .onAppear {
