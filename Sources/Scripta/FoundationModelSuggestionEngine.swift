@@ -1,4 +1,5 @@
 #if compiler(>=6.0) && canImport(FoundationModels)
+import Foundation
 import FoundationModels
 import ScriptaCore
 
