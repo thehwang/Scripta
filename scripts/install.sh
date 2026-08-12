@@ -9,6 +9,7 @@
 #
 # Or run locally:
 #   bash install.sh                       (auto-download latest release)
+#   SCRIPTA_VERSION=v3.3.4 bash install.sh  (pin a specific release)
 #   bash install.sh Scripta-macos15.zip   (use local zip)
 set -e
 
@@ -87,20 +88,41 @@ if [ -z "$SOURCE_APP" ]; then
     info "Downloading latest release from GitHub..."
     mkdir -p "$TMPDIR_INSTALL"
 
-    ASSET_NAME="Scripta-macos${MACOS_MAJOR}.zip"
-    DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/$ASSET_NAME"
-
-    info "Trying $ASSET_NAME ..."
-    if ! curl -fSL --progress-bar -o "$TMPDIR_INSTALL/$ASSET_NAME" "$DOWNLOAD_URL" 2>&1; then
-        if [ "$MACOS_MAJOR" -ge 15 ]; then
-            ASSET_NAME="Scripta-macos15.zip"
+    download_asset() {
+        local asset="$1"
+        local tag="${SCRIPTA_VERSION:-}"
+        local url
+        if [ -n "$tag" ]; then
+            case "$tag" in v*) ;; *) tag="v$tag" ;; esac
+            url="https://github.com/$REPO/releases/download/$tag/$asset"
         else
-            ASSET_NAME="Scripta-macos14.zip"
+            url="https://github.com/$REPO/releases/latest/download/$asset"
         fi
-        DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/$ASSET_NAME"
-        info "Retrying with $ASSET_NAME ..."
-        curl -fSL --progress-bar -o "$TMPDIR_INSTALL/$ASSET_NAME" "$DOWNLOAD_URL" \
-            || fail "Download failed. Check https://github.com/$REPO/releases for available files."
+        info "Downloading $asset ..."
+        curl -fsSL --retry 3 --retry-delay 2 \
+            -o "$TMPDIR_INSTALL/$asset" "$url"
+    }
+
+    candidates=()
+    if [ "$MACOS_MAJOR" -ge 26 ]; then
+        candidates+=("Scripta-macos26.zip")
+    fi
+    if [ "$MACOS_MAJOR" -ge 15 ]; then
+        candidates+=("Scripta-macos15.zip")
+    fi
+    candidates+=("Scripta-macos14.zip")
+
+    ASSET_NAME=""
+    for candidate in "${candidates[@]}"; do
+        if download_asset "$candidate"; then
+            ASSET_NAME="$candidate"
+            break
+        fi
+        warn "Could not download $candidate"
+    done
+
+    if [ -z "$ASSET_NAME" ]; then
+        fail "Download failed for all candidates. Check https://github.com/$REPO/releases or set SCRIPTA_VERSION=v3.3.4"
     fi
 
     ok "Downloaded $ASSET_NAME"

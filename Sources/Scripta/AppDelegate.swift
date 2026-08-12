@@ -23,6 +23,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(handleDisplayModeChanged(_:)),
             name: .displayModeChanged, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleMinimalWindowLayoutNeeded),
+            name: .minimalWindowLayoutNeeded, object: nil
+        )
+    }
+
+    @objc private func handleMinimalWindowLayoutNeeded() {
+        guard let win = window,
+              UserDefaults.standard.string(forKey: "Scripta.displayMode") == DisplayMode.minimal.rawValue else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.applyMinimalWindowFrame(win, animated: false)
+        }
+    }
+
+    private func applyMinimalWindowFrame(_ win: NSWindow, animated: Bool) {
+        guard let screen = win.screen ?? NSScreen.main else { return }
+
+        win.contentView?.layoutSubtreeIfNeeded()
+
+        let fitting = win.contentView?.fittingSize ?? NSSize(width: 560, height: 96)
+        let contentWidth = min(900, max(480, fitting.width))
+        let contentHeight = min(280, max(72, fitting.height))
+        let contentSize = NSSize(width: contentWidth, height: contentHeight)
+
+        var frame = win.frameRect(forContentRect: NSRect(origin: .zero, size: contentSize))
+        frame.origin.x = screen.visibleFrame.midX - frame.width / 2
+
+        let bottomMargin = max(48, screen.visibleFrame.height * 0.06)
+        frame.origin.y = screen.visibleFrame.minY + bottomMargin
+
+        // Keep the entire window inside the visible area.
+        let topLimit = screen.visibleFrame.maxY - 24
+        if frame.maxY > topLimit {
+            frame.origin.y = topLimit - frame.height
+        }
+        if frame.minY < screen.visibleFrame.minY + 16 {
+            frame.origin.y = screen.visibleFrame.minY + 16
+        }
+
+        win.setFrame(frame, display: true, animate: animated)
+    }
+
+    private func configureHostingController(_ hosting: NSHostingController<some View>) {
+        if #available(macOS 13.0, *) {
+            hosting.sizingOptions = .intrinsicContentSize
+        }
     }
 
     private func setupMainMenu() {
@@ -84,15 +130,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             win.isMovableByWindowBackground = true
             win.backgroundColor = .clear
             win.isOpaque = false
-            win.minSize = NSSize(width: 320, height: 80)
-            win.maxSize = NSSize(width: 1200, height: 400)
-            let size = NSSize(width: 560, height: 120)
-            let screen = win.screen ?? NSScreen.main ?? NSScreen.screens[0]
-            let origin = NSPoint(
-                x: screen.visibleFrame.midX - size.width / 2,
-                y: screen.visibleFrame.minY + 24
-            )
-            win.setFrame(NSRect(origin: origin, size: size), display: true, animate: true)
+            win.minSize = NSSize(width: 320, height: 72)
+            win.maxSize = NSSize(width: 900, height: 280)
+            win.setContentSize(NSSize(width: 560, height: 96))
+            DispatchQueue.main.async { [weak self] in
+                self?.applyMinimalWindowFrame(win, animated: true)
+                DispatchQueue.main.async {
+                    self?.applyMinimalWindowFrame(win, animated: false)
+                }
+            }
         case .full:
             win.standardWindowButton(.closeButton)?.isHidden = false
             win.standardWindowButton(.miniaturizeButton)?.isHidden = false
@@ -159,6 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showMainWindow()
         }
         let hosting = NSHostingController(rootView: permView)
+        configureHostingController(hosting)
         let win = window ?? NSWindow(contentViewController: hosting)
         win.contentViewController = hosting
         win.title = "Scripta"
@@ -175,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showMainWindow()
         }
         let hosting = NSHostingController(rootView: setupView)
+        configureHostingController(hosting)
         let win = window ?? NSWindow(contentViewController: hosting)
         win.contentViewController = hosting
         win.title = "Scripta — AI Model Setup"
@@ -200,6 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         let hosting = NSHostingController(rootView: rootView)
+        configureHostingController(hosting)
 
         if let win = window {
             win.contentViewController = hosting

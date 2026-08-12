@@ -12,6 +12,7 @@ struct HistoryDetailView: View {
     @State private var transcript = ""
     @State private var summary: String?
     @State private var showChat = false
+    @State private var chatPendingQuestion: String?
     @State private var showDeleteConfirm = false
     @State private var isRegenerating = false
     @StateObject private var summaryService = SummaryService()
@@ -35,9 +36,11 @@ struct HistoryDetailView: View {
                 ChatPanel(
                     transcriptText: transcript,
                     modelName: modelName,
-                    isModelReady: isModelReady
+                    isModelReady: isModelReady,
+                    pendingQuestion: $chatPendingQuestion
                 )
-                .frame(minWidth: 260, idealWidth: 300, maxWidth: 400)
+                .frame(minWidth: 320, idealWidth: 380, maxWidth: 480)
+                .layoutPriority(1)
             }
         }
         .onAppear {

@@ -14,6 +14,7 @@ struct ChatPanel: View {
     let transcriptText: String
     let modelName: String
     let isModelReady: Bool
+    @Binding var pendingQuestion: String?
 
     @StateObject private var summaryService = SummaryService()
     @State private var messages: [ChatMessage] = []
@@ -37,10 +38,18 @@ struct ChatPanel: View {
             header
             Divider().background(Theme.border)
             messagesArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider().background(Theme.border)
             inputBar
         }
+        .frame(minWidth: 320, idealWidth: 380)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg)
+        .onChange(of: pendingQuestion) { _, question in
+            guard let question else { return }
+            pendingQuestion = nil
+            submitQuestion(question)
+        }
     }
 
     private var header: some View {
@@ -208,9 +217,15 @@ struct ChatPanel: View {
     private func sendMessage() {
         let question = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
-
-        messages.append(ChatMessage(role: "user", text: question, timestamp: Date()))
         inputText = ""
+        submitQuestion(question)
+    }
+
+    private func submitQuestion(_ question: String) {
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        messages.append(ChatMessage(role: "user", text: trimmed, timestamp: Date()))
 
         let history = messages.dropLast().map { (role: $0.role, text: $0.text) }
         let transcript = transcriptText
@@ -221,7 +236,7 @@ struct ChatPanel: View {
                 let result = try await summaryService.askQuestion(
                     transcript: transcript,
                     chatHistory: history,
-                    question: question,
+                    question: trimmed,
                     modelName: model
                 )
                 await MainActor.run {

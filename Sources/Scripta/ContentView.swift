@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import ScriptaCore
 import Speech
@@ -30,6 +31,7 @@ enum DisplayMode: String {
 extension Notification.Name {
     static let displayModeChanged = Notification.Name("Scripta.displayModeChanged")
     static let showMeetingHistory = Notification.Name("Scripta.showMeetingHistory")
+    static let minimalWindowLayoutNeeded = Notification.Name("Scripta.minimalWindowLayoutNeeded")
 }
 
 // MARK: - Main View
@@ -52,8 +54,7 @@ struct ContentView: View {
     @AppStorage("Scripta.fontScale") private var fontScale: Double = 1.0
     @AppStorage("Scripta.recordingDisclaimerAccepted") private var disclaimerAccepted = false
     @State private var showRecordingDisclaimer = false
-    @State private var showDeepAskSheet = false
-    @State private var deepAskQuestion = ""
+    @State private var chatPendingQuestion: String?
     @State private var rollingContextText = ""
     @State private var whisperModelState: WhisperModelState = WhisperEngine.isModelDownloaded ? .ready : .missing
     @State private var whisperDownloadProgress: String = ""
@@ -139,17 +140,11 @@ struct ContentView: View {
         } message: {
             Text("Recording conversations may be subject to local consent laws. In many jurisdictions, all participants must be informed and consent before being recorded.\n\nYou are solely responsible for complying with applicable laws. By proceeding, you acknowledge this responsibility.")
         }
-        .sheet(isPresented: $showDeepAskSheet) {
-            DeepAskSheet(
-                question: deepAskQuestion,
-                transcript: rollingContextText,
-                modelName: summaryModelManager.selectedModel,
-                isModelReady: summaryModelManager.isReady,
-                onDismiss: {
-                    showDeepAskSheet = false
-                    suggestionCoordinator.dismissCurrent()
-                }
-            )
+        .onChange(of: showChatPanel) { _, isOpen in
+            if isOpen { ensureChatPanelWindowWidth() }
+        }
+        .onChange(of: suggestionCoordinator.currentSuggestion?.question) { _, _ in
+            if isMinimal { requestMinimalWindowLayout() }
         }
     }
 
@@ -158,13 +153,39 @@ struct ContentView: View {
         if let suggestion = suggestionCoordinator.currentSuggestion {
             SuggestionStrip(
                 suggestion: suggestion,
-                onDeepAsk: {
-                    deepAskQuestion = suggestion.question
-                    showDeepAskSheet = true
-                },
+                onDeepAsk: { openAskAI(with: suggestion.question) },
                 onDismiss: { suggestionCoordinator.dismissCurrent() }
             )
         }
+    }
+
+    private var chatTranscriptText: String {
+        if recorder.isRecording, !rollingContextText.isEmpty {
+            return rollingContextText
+        }
+        return liveTranscriptText
+    }
+
+    private func openAskAI(with question: String) {
+        if isMinimal {
+            switchToMode(.full)
+        }
+        showChatPanel = true
+        ensureChatPanelWindowWidth()
+        chatPendingQuestion = question
+        suggestionCoordinator.dismissCurrent()
+    }
+
+    private func ensureChatPanelWindowWidth() {
+        guard let window = NSApp.windows.first(where: { $0.title.hasPrefix("Scripta") }) else { return }
+        let minWidth: CGFloat = 980
+        guard window.frame.width < minWidth else { return }
+
+        var frame = window.frame
+        let extra = minWidth - frame.width
+        frame.origin.x -= extra / 2
+        frame.size.width = minWidth
+        window.setFrame(frame, display: true, animate: true)
     }
 
     // MARK: - Full Mode Body
@@ -208,14 +229,16 @@ struct ContentView: View {
 
             if showChatPanel {
                 ChatPanel(
-                    transcriptText: liveTranscriptText,
+                    transcriptText: chatTranscriptText,
                     modelName: summaryModelManager.selectedModel,
-                    isModelReady: summaryModelManager.isReady
+                    isModelReady: summaryModelManager.isReady,
+                    pendingQuestion: $chatPendingQuestion
                 )
-                .frame(minWidth: 260, idealWidth: 320, maxWidth: 450)
+                .frame(minWidth: 320, idealWidth: 380, maxWidth: 480)
+                .layoutPriority(1)
             }
         }
-        .frame(minWidth: showChatPanel ? 900 : 760, minHeight: 680)
+        .frame(minWidth: showChatPanel ? 980 : 760, minHeight: 680)
         .sheet(isPresented: $showHistoryPanel) {
             HistoryPanel(
                 store: meetingStore,
@@ -239,15 +262,21 @@ struct ContentView: View {
             suggestionStripIfNeeded
             minimalControlBar
         }
+        .frame(width: 560)
+        .fixedSize(horizontal: true, vertical: true)
         .background(Color.black.opacity(0.82))
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 0.5))
+        .onAppear { requestMinimalWindowLayout() }
+    }
+
+    private func requestMinimalWindowLayout() {
+        NotificationCenter.default.post(name: .minimalWindowLayoutNeeded, object: nil)
     }
 
     private var minimalCaptionArea: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Spacer(minLength: 0)
             let recentEntries = Array(recorder.entries.suffix(4))
             if recentEntries.isEmpty {
                 Text(recorder.isRecording ? "Listening..." : "Press ● to start")
