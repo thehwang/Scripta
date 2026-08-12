@@ -110,7 +110,11 @@ final class SuggestionCoordinator: ObservableObject {
                 guard !isDuplicate(suggestion.question) else { return }
                 currentSuggestion = suggestion
             } catch {
-                mplog("SuggestionEngine: \(error.localizedDescription)")
+                if String(describing: error).contains("unsafe") {
+                    mplog("SuggestionEngine: guardrail blocked transcript content")
+                } else {
+                    mplog("SuggestionEngine: \(error.localizedDescription)")
+                }
             }
         }
         #endif

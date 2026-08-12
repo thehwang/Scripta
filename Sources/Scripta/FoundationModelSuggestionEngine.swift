@@ -3,23 +3,20 @@ import FoundationModels
 import ScriptaCore
 
 @available(macOS 26, *)
-@Generable
-struct MeetingSuggestionOutput {
-    @Guide(description: "True only when a clarifying question would genuinely help the user")
-    var hasSuggestion: Bool
-
-    @Guide(description: "Suggested question in the same language as the meeting")
-    var question: String
-
-    @Guide(description: "One short sentence explaining why to ask this")
-    var rationale: String
-
-    @Guide(description: "low, medium, or high")
-    var confidence: String
+private struct MeetingSuggestionJSON: Decodable {
+    let hasSuggestion: Bool
+    let question: String
+    let rationale: String
 }
 
 @available(macOS 26, *)
 enum FoundationModelSuggestionEngine {
+    /// Meeting transcripts are unverified user content; permissive guardrails allow analysis.
+    private static let meetingModel = SystemLanguageModel(
+        useCase: .general,
+        guardrails: .permissiveContentTransformations
+    )
+
     static func availabilityStatus() -> (enabled: Bool, reason: String) {
         switch SystemLanguageModel.default.availability {
         case .available:
@@ -35,29 +32,44 @@ enum FoundationModelSuggestionEngine {
 
     static func evaluate(context: String) async throws -> MeetingSuggestion? {
         let instructions = """
-        You monitor live meeting transcripts. Suggest at most one clarifying question the listener \
-        might want to ask right now. Prefer silence over weak or generic questions. \
-        Only suggest when something important is unclear, unresolved, or worth confirming.
+        You analyze live meeting transcripts for a note-taking app. The transcript may discuss \
+        news, business, or sensitive topics — analyze it professionally. Suggest at most one \
+        clarifying question the listener might ask right now. Prefer no suggestion over a weak one.
+        Reply with ONLY minified JSON using this schema:
+        {"hasSuggestion":boolean,"question":string,"rationale":string}
+        If hasSuggestion is false, set question and rationale to empty strings.
         """
 
-        let session = LanguageModelSession(instructions: instructions)
+        let session = LanguageModelSession(model: meetingModel, instructions: instructions)
         let prompt = """
         Recent transcript (last few minutes):
         \(context)
-
-        Should the user ask a clarifying question now?
         """
 
-        let response = try await session.respond(
-            to: prompt,
-            generating: MeetingSuggestionOutput.self
-        )
+        let response = try await session.respond(to: prompt)
+        return parseSuggestion(from: response.content)
+    }
 
-        let output = response.content
-        let question = output.question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard output.hasSuggestion, !question.isEmpty else { return nil }
+    private static func parseSuggestion(from text: String) -> MeetingSuggestion? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
 
-        let rationale = output.rationale.trimmingCharacters(in: .whitespacesAndNewlines)
+        var jsonText = trimmed
+        if let start = trimmed.firstIndex(of: "{"),
+           let end = trimmed.lastIndex(of: "}") {
+            jsonText = String(trimmed[start...end])
+        }
+
+        guard let data = jsonText.data(using: .utf8),
+              let parsed = try? JSONDecoder().decode(MeetingSuggestionJSON.self, from: data) else {
+            mplog("SuggestionEngine: could not parse response: \(trimmed.prefix(200))")
+            return nil
+        }
+
+        let question = parsed.question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard parsed.hasSuggestion, !question.isEmpty else { return nil }
+
+        let rationale = parsed.rationale.trimmingCharacters(in: .whitespacesAndNewlines)
         return MeetingSuggestion(question: question, rationale: rationale)
     }
 }
