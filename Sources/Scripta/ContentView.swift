@@ -42,6 +42,7 @@ struct ContentView: View {
     var onOpenModelSettings: (() -> Void)?
 
     @StateObject private var summaryService = SummaryService()
+    @StateObject private var suggestionCoordinator = SuggestionCoordinator()
     @State private var hasMicPermission = false
     @State private var now = Date()
     @State private var showSummary = false
@@ -51,6 +52,9 @@ struct ContentView: View {
     @AppStorage("Scripta.fontScale") private var fontScale: Double = 1.0
     @AppStorage("Scripta.recordingDisclaimerAccepted") private var disclaimerAccepted = false
     @State private var showRecordingDisclaimer = false
+    @State private var showDeepAskSheet = false
+    @State private var deepAskQuestion = ""
+    @State private var rollingContextText = ""
     @State private var whisperModelState: WhisperModelState = WhisperEngine.isModelDownloaded ? .ready : .missing
     @State private var whisperDownloadProgress: String = ""
 
@@ -62,6 +66,13 @@ struct ContentView: View {
 
     private var liveTranscriptText: String {
         recorder.entries.map { "[\($0.speaker)] \($0.text)" }.joined(separator: "\n")
+    }
+
+    private var committedEntrySignature: String {
+        recorder.entries
+            .filter(\.isCommitted)
+            .map { "\($0.id.uuidString):\($0.text.count)" }
+            .joined(separator: "|")
     }
 
     private let fontScaleMin: Double = 0.7
@@ -89,10 +100,17 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .onChange(of: recorder.entries.count) { translateCommittedEntries() }
+        .onChange(of: recorder.entries.count) {
+            translateCommittedEntries()
+            updateSuggestionContext()
+        }
+        .onChange(of: committedEntrySignature) { updateSuggestionContext() }
         .onChange(of: recorder.state) {
             if recorder.state == .completed && summaryModelManager.isReady {
                 showSummary = true
+            }
+            if recorder.state != .recording {
+                suggestionCoordinator.reset()
             }
         }
         .task { await summaryModelManager.checkConnection() }
@@ -100,7 +118,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshPermissionStatus()
         }
-        .onReceive(timer) { now = $0; translateCommittedEntries() }
+        .onReceive(timer) {
+            now = $0
+            translateCommittedEntries()
+            updateSuggestionContext()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .showMeetingHistory)) { _ in
             showHistoryPanel = true
         }
@@ -113,6 +135,32 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Recording conversations may be subject to local consent laws. In many jurisdictions, all participants must be informed and consent before being recorded.\n\nYou are solely responsible for complying with applicable laws. By proceeding, you acknowledge this responsibility.")
+        }
+        .sheet(isPresented: $showDeepAskSheet) {
+            DeepAskSheet(
+                question: deepAskQuestion,
+                transcript: rollingContextText,
+                modelName: summaryModelManager.selectedModel,
+                isModelReady: summaryModelManager.isReady,
+                onDismiss: {
+                    showDeepAskSheet = false
+                    suggestionCoordinator.dismissCurrent()
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var suggestionStripIfNeeded: some View {
+        if let suggestion = suggestionCoordinator.currentSuggestion {
+            SuggestionStrip(
+                suggestion: suggestion,
+                onDeepAsk: {
+                    deepAskQuestion = suggestion.question
+                    showDeepAskSheet = true
+                },
+                onDismiss: { suggestionCoordinator.dismissCurrent() }
+            )
         }
     }
 
@@ -148,6 +196,8 @@ struct ContentView: View {
                     }
 
                     Spacer(minLength: 0)
+                    suggestionStripIfNeeded
+                        .padding(.horizontal, 20)
                     bottomBar
                 }
             }
@@ -183,6 +233,7 @@ struct ContentView: View {
     private var minimalBody: some View {
         VStack(spacing: 0) {
             minimalCaptionArea
+            suggestionStripIfNeeded
             minimalControlBar
         }
         .background(Color.black.opacity(0.82))
@@ -1201,6 +1252,19 @@ struct ContentView: View {
     }
 
     // MARK: - Translation
+
+    private func updateSuggestionContext() {
+        guard suggestionCoordinator.isEnabled else { return }
+
+        var buffer = RollingContextBuffer(windowSeconds: 180)
+        buffer.ingest(entries: recorder.entries)
+        rollingContextText = buffer.contextText
+
+        suggestionCoordinator.processEntries(
+            recorder.entries,
+            isRecording: recorder.isRecording
+        )
+    }
 
     private func translateCommittedEntries() {
         guard translationService.isEnabled, translationService.isAvailable else { return }

@@ -56,6 +56,53 @@ jobs:
           name: Scripta-macos15
           path: Scripta-macos15.zip
 
+  build-macos26:
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app || sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Build whisper.cpp static library
+        run: make whisper-lib
+
+      - name: Resolve dependencies
+        run: swift package resolve
+
+      - name: Build release
+        run: swift build -c release
+
+      - name: Package app
+        run: |
+          APP="Scripta"
+          BIN_PATH="$(swift build -c release --show-bin-path)"
+          DIST_DIR="build/dist"
+          APP_BUNDLE="$DIST_DIR/$APP.app"
+
+          mkdir -p "$APP_BUNDLE/Contents/MacOS"
+          mkdir -p "$APP_BUNDLE/Contents/Resources"
+          cp "$BIN_PATH/$APP" "$APP_BUNDLE/Contents/MacOS/$APP"
+          cp "Sources/Scripta/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+          [ -f "Resources/AppIcon.icns" ] && cp "Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+
+          xattr -cr "$APP_BUNDLE"
+          /usr/bin/codesign --force --sign - \
+            --entitlements Scripta-deploy.entitlements \
+            --deep "$APP_BUNDLE"
+
+      - name: Create ZIP
+        run: |
+          cp scripts/install.sh build/dist/install.sh
+          cd build/dist && zip -r ../../Scripta-macos26.zip Scripta.app install.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Scripta-macos26
+          path: Scripta-macos26.zip
+
   build-macos14:
     runs-on: macos-14
     steps:
@@ -104,10 +151,16 @@ jobs:
           path: Scripta-macos14.zip
 
   release:
-    needs: [build-macos15, build-macos14]
+    needs: [build-macos26, build-macos15, build-macos14]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - name: Download macOS 26 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Scripta-macos26
+          path: artifacts/
+
       - name: Download macOS 15 artifact
         uses: actions/download-artifact@v4
         with:
@@ -129,10 +182,11 @@ jobs:
           body: |
             ## Installation
 
-            | File | macOS Version | Real-time Translation |
-            |------|---------------|-----------------------|
-            | `Scripta-macos15.zip` | macOS 15+ | Yes (Apple Translation) |
-            | `Scripta-macos14.zip` | macOS 14+ | No |
+            | File | macOS Version | Real-time Translation | FM Suggestions |
+            |------|---------------|-----------------------|----------------|
+            | `Scripta-macos26.zip` | macOS 26+ | Yes (Apple Translation) | Yes (Apple Intelligence) |
+            | `Scripta-macos15.zip` | macOS 15–25 | Yes (Apple Translation) | No |
+            | `Scripta-macos14.zip` | macOS 14 | No | No |
 
             ### One-line install:
             ```bash
@@ -144,6 +198,7 @@ jobs:
             Download the zip above, then `unzip` and `bash install.sh`.
 
             ### What's new
+            - **Meeting suggestions** on macOS 26 (on-device Foundation Models + Ollama deep ask)
             - **whisper.cpp** for microphone transcription (100% local, Metal-accelerated)
             - **SFSpeechRecognizer** for system audio (no more dual-task XPC conflicts)
             - Whisper model auto-download in install script and in-app prompt
