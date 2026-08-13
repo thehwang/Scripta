@@ -19,9 +19,9 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
-    <string>3.3.5</string>
+    <string>3.3.6</string>
     <key>CFBundleVersion</key>
-    <string>8</string>
+    <string>9</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Scripta needs microphone access to capture your voice during meetings.</string>
     <key>NSSpeechRecognitionUsageDescription</key>

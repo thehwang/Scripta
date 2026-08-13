@@ -172,8 +172,15 @@ struct ContentView: View {
         }
         showChatPanel = true
         ensureChatPanelWindowWidth()
-        chatPendingQuestion = question
         suggestionCoordinator.dismissCurrent()
+
+        // ChatPanel is created after showChatPanel flips; defer so onChange/onAppear can consume it.
+        chatPendingQuestion = nil
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        DispatchQueue.main.async {
+            chatPendingQuestion = trimmed
+        }
     }
 
     private func ensureChatPanelWindowWidth() {

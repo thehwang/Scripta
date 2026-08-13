@@ -45,11 +45,16 @@ struct ChatPanel: View {
         .frame(minWidth: 320, idealWidth: 380)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg)
-        .onChange(of: pendingQuestion) { _, question in
-            guard let question else { return }
-            pendingQuestion = nil
-            submitQuestion(question)
+        .onAppear { consumePendingQuestion() }
+        .onChange(of: pendingQuestion) { _, _ in
+            consumePendingQuestion()
         }
+    }
+
+    private func consumePendingQuestion() {
+        guard let question = pendingQuestion else { return }
+        pendingQuestion = nil
+        submitQuestion(question)
     }
 
     private var header: some View {
@@ -91,6 +96,16 @@ struct ChatPanel: View {
                     if isGenerating && !streamingResponse.isEmpty {
                         streamingBubble
                             .id("streaming")
+                    } else if isGenerating {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Thinking...")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.textMuted)
+                        }
+                        .padding(.vertical, 8)
+                        .id("streaming")
                     }
                 }
                 .padding(.horizontal, 12)
