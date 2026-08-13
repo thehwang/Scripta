@@ -119,7 +119,11 @@ final class TranslationService: ObservableObject {
             }
             do {
                 let response = try await session.translate(text)
-                return response.targetText
+                let result = response.targetText
+                if !result.isEmpty {
+                    mplog("Translation: ok (\(text.prefix(40))… → \(result.prefix(40))…)")
+                }
+                return result
             } catch {
                 mplog("Translation error: \(error.localizedDescription)")
                 return nil

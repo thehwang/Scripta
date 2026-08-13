@@ -77,6 +77,12 @@ struct ContentView: View {
             .joined(separator: "|")
     }
 
+    /// Tracks live (uncommitted) tail text so we can translate partial lines without a 1s timer.
+    private var liveTranslationSignature: String {
+        guard let last = recorder.entries.last, !last.isCommitted else { return "" }
+        return "\(last.id.uuidString):\(last.text.count)"
+    }
+
     private let fontScaleMin: Double = 0.7
     private let fontScaleMax: Double = 1.8
     private let fontScaleStep: Double = 0.1
@@ -106,7 +112,11 @@ struct ContentView: View {
             translateCommittedEntries()
             updateSuggestionContext()
         }
-        .onChange(of: committedEntrySignature) { updateSuggestionContext() }
+        .onChange(of: committedEntrySignature) {
+            updateSuggestionContext()
+            translateCommittedEntries()
+        }
+        .onChange(of: liveTranslationSignature) { translateCommittedEntries() }
         .onChange(of: recorder.state) {
             if recorder.state == .completed && summaryModelManager.isReady {
                 showSummary = true
@@ -125,11 +135,21 @@ struct ContentView: View {
         }
         .onReceive(timer) {
             now = $0
-            translateCommittedEntries()
             updateSuggestionContext()
         }
         .onChange(of: translationService.isSessionReady) { _, ready in
-            if ready { translateCommittedEntries() }
+            if ready {
+                translateCommittedEntries()
+            } else {
+                translationWork?.cancel()
+                translationWork = nil
+            }
+        }
+        .onChange(of: translationService.isEnabled) { _, enabled in
+            if !enabled {
+                translationWork?.cancel()
+                translationWork = nil
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .showMeetingHistory)) { _ in
             showHistoryPanel = true
@@ -1309,49 +1329,70 @@ struct ContentView: View {
         )
     }
 
+    private func indicesNeedingTranslation(in entries: [TranscriptEntry]) -> [Int] {
+        var indices: [Int] = []
+        for i in entries.indices {
+            let e = entries[i]
+            guard e.isCommitted else { continue }
+            let needsTranslation = e.translatedText == nil
+                || (e.translatedSourceText != nil && e.translatedSourceText != e.text)
+            if needsTranslation {
+                indices.append(i)
+            }
+        }
+
+        if let lastIdx = entries.indices.last,
+           !entries[lastIdx].isCommitted,
+           entries[lastIdx].text.count > 40 {
+            let e = entries[lastIdx]
+            let needsTranslation = e.translatedText == nil
+                || (e.translatedSourceText != nil && e.translatedSourceText != e.text)
+            if needsTranslation {
+                indices.append(lastIdx)
+            }
+        }
+
+        return indices
+    }
+
     private func translateCommittedEntries() {
         guard translationService.isEnabled,
               translationService.isAvailable,
               translationService.isSessionReady else { return }
+
         let entries = recorder.entries
         guard !entries.isEmpty else { return }
 
-        var indicesToTranslate: [Int] = []
-        for i in 0..<entries.count {
-            let e = entries[i]
-            if e.isCommitted {
-                // Needs translation if never translated or text changed since last translation
-                let needsTranslation = e.translatedText == nil
-                    || (e.translatedSourceText != nil && e.translatedSourceText != e.text)
-                if needsTranslation {
-                    indicesToTranslate.append(i)
-                }
-            }
-        }
-
-        // Also translate the latest active entry if it's long enough
-        // to provide real-time feedback while speaking
-        if let lastIdx = entries.indices.last,
-           !entries[lastIdx].isCommitted,
-           entries[lastIdx].translatedText == nil,
-           entries[lastIdx].text.count > 60 {
-            indicesToTranslate.append(lastIdx)
-        }
-
+        let indicesToTranslate = indicesNeedingTranslation(in: entries)
         guard !indicesToTranslate.isEmpty else { return }
 
-        translationWork?.cancel()
+        // One serial worker — do not cancel on every trigger (timer used to cancel every second).
+        guard translationWork == nil else { return }
+
         translationWork = Task { @MainActor in
+            defer {
+                translationWork = nil
+                if !indicesNeedingTranslation(in: recorder.entries).isEmpty {
+                    translateCommittedEntries()
+                }
+            }
+
             for idx in indicesToTranslate {
                 if Task.isCancelled { return }
-                guard idx < self.recorder.entries.count else { continue }
-                let text = self.recorder.entries[idx].text
+                guard idx < recorder.entries.count else { continue }
 
-                // Build context: include up to 2 previous committed entries
+                let entry = recorder.entries[idx]
+                if entry.translatedText != nil,
+                   entry.translatedSourceText == entry.text {
+                    continue
+                }
+
+                let text = entry.text
+
                 var contextLines: [String] = []
                 for prev in max(0, idx - 2)..<idx {
-                    if prev < self.recorder.entries.count {
-                        contextLines.append(self.recorder.entries[prev].text)
+                    if prev < recorder.entries.count {
+                        contextLines.append(recorder.entries[prev].text)
                     }
                 }
 
@@ -1368,9 +1409,9 @@ struct ContentView: View {
 
                 if Task.isCancelled { return }
 
-                if let translated, idx < self.recorder.entries.count {
-                    self.recorder.entries[idx].translatedText = translated
-                    self.recorder.entries[idx].translatedSourceText = text
+                if let translated, idx < recorder.entries.count {
+                    recorder.entries[idx].translatedText = translated
+                    recorder.entries[idx].translatedSourceText = text
                 }
             }
         }
