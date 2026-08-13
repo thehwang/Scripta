@@ -10,6 +10,11 @@ enum TranslationDisplayMode: String, CaseIterable {
     case bilingual = "Bilingual"
 }
 
+private struct TranslationJob: Equatable {
+    let entryID: UUID
+    let text: String
+}
+
 final class TranslationService: ObservableObject {
     @Published var isEnabled: Bool = false {
         didSet { UserDefaults.standard.set(isEnabled, forKey: "Scripta.translationEnabled") }
@@ -33,6 +38,9 @@ final class TranslationService: ObservableObject {
     @Published private(set) var isSessionReady: Bool = false
     @Published var configurationNeedsUpdate: Bool = false
 
+    /// Called on the main actor when a queued translation completes.
+    var onTranslated: ((UUID, String, String) -> Void)?
+
     static let supportedLanguages: [(code: String, name: String)] = [
         ("en", "English"),
         ("zh-Hans", "Chinese (Simplified)"),
@@ -48,7 +56,7 @@ final class TranslationService: ObservableObject {
         ("ar", "Arabic"),
     ]
 
-    private var activeSession: Any?
+    private var queuedJobs: [TranslationJob] = []
 
     init() {
         isEnabled = UserDefaults.standard.bool(forKey: "Scripta.translationEnabled")
@@ -90,89 +98,73 @@ final class TranslationService: ObservableObject {
         let tgt = Locale.Language(identifier: targetLanguageCode)
         return TranslationSession.Configuration(source: src, target: tgt)
     }
-
-    @available(macOS 15.0, *)
-    @MainActor
-    func setSession(_ session: TranslationSession) {
-        activeSession = session
-        isSessionReady = true
-        mplog("Translation: session ready (\(sourceLanguageCode) → \(targetLanguageCode))")
-    }
     #endif
 
     @MainActor
     func clearSession() {
-        activeSession = nil
         isSessionReady = false
+        queuedJobs = []
     }
 
     @MainActor
-    func translate(_ text: String) async -> String? {
-        guard isEnabled, isAvailable, isSessionReady,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+    func scheduleTranslation(entryID: UUID, text: String) {
+        guard isEnabled, isAvailable else { return }
 
-        #if compiler(>=6.0) && canImport(Translation)
-        if #available(macOS 15.0, *) {
-            guard let session = activeSession as? TranslationSession else {
-                mplog("Translation: no active session")
-                return nil
-            }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 20 else { return }
+
+        if let existing = queuedJobs.firstIndex(where: { $0.entryID == entryID }) {
+            if queuedJobs[existing].text == trimmed { return }
+            queuedJobs[existing] = TranslationJob(entryID: entryID, text: trimmed)
+            mplog("Translation: re-queued (\(trimmed.count) chars)")
+            return
+        }
+
+        queuedJobs.append(TranslationJob(entryID: entryID, text: trimmed))
+        mplog("Translation: queued (\(trimmed.count) chars, queue=\(queuedJobs.count))")
+    }
+
+    @MainActor
+    var hasPendingJobs: Bool { !queuedJobs.isEmpty }
+
+    #if compiler(>=6.0) && canImport(Translation)
+    @available(macOS 15.0, *)
+    @MainActor
+    func runQueuedTranslations(using session: TranslationSession) async {
+        guard isEnabled else { return }
+
+        let jobs = queuedJobs
+        queuedJobs = []
+        guard !jobs.isEmpty else { return }
+
+        for job in jobs {
             do {
-                let response = try await session.translate(text)
-                let result = response.targetText
-                if !result.isEmpty {
-                    mplog("Translation: ok (\(text.prefix(40))… → \(result.prefix(40))…)")
+                mplog("Translation: start (\(job.text.count) chars)")
+                let response = try await session.translate(job.text)
+                let result = response.targetText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !result.isEmpty else {
+                    mplog("Translation: empty result")
+                    continue
                 }
-                return result
+                mplog("Translation: ok (→ \(result.prefix(40))…)")
+                onTranslated?(job.entryID, job.text, result)
             } catch {
                 mplog("Translation error: \(error.localizedDescription)")
-                return nil
             }
         }
-        #endif
-        return nil
     }
 
-    /// Translate text with preceding context for better quality.
-    /// Uses a delimiter to separate context from the target text, then extracts just
-    /// the translated target portion.
+    @available(macOS 15.0, *)
     @MainActor
-    func translateWithContext(text: String, context: String) async -> String? {
-        guard isEnabled, isAvailable, isSessionReady,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-
-        #if compiler(>=6.0) && canImport(Translation)
-        if #available(macOS 15.0, *) {
-            guard let session = activeSession as? TranslationSession else {
-                mplog("Translation: no active session (context)")
-                return nil
-            }
-            do {
-                // Use a separator that's unlikely to be in speech
-                let separator = " ||| "
-                let combined = context + separator + text
-                let fullResponse = try await session.translate(combined)
-                let fullTranslation = fullResponse.targetText
-
-                // Try to split on the translated separator
-                // The Translation API often preserves delimiters like |||
-                for sep in [" ||| ", "|||", " | ", "| "] {
-                    if let range = fullTranslation.range(of: sep, options: .backwards) {
-                        let result = String(fullTranslation[range.upperBound...])
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !result.isEmpty { return result }
-                    }
-                }
-
-                // Fallback: translate just the text directly
-                let directResponse = try await session.translate(text)
-                return directResponse.targetText
-            } catch {
-                mplog("Translation(context) error: \(error.localizedDescription)")
-                return nil
-            }
+    func attachSession(_ session: TranslationSession) async {
+        isSessionReady = true
+        mplog("Translation: session ready (\(sourceLanguageCode) → \(targetLanguageCode))")
+        do {
+            try await session.prepareTranslation()
+            mplog("Translation: languages prepared")
+        } catch {
+            mplog("Translation prepare error: \(error.localizedDescription)")
         }
-        #endif
-        return nil
     }
+    #endif
 }

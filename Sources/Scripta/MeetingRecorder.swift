@@ -457,7 +457,14 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
     private func appendWhisperTranscript(_ text: String) {
         mplog("[You/Whisper] \(String(text.prefix(120)))")
-        entries.append(TranscriptEntry(speaker: "You", text: text, isCommitted: true))
+        entries = entries + [TranscriptEntry(speaker: "You", text: text, isCommitted: true)]
+    }
+
+    private func updateEntry(at index: Int, _ mutate: (inout TranscriptEntry) -> Void) {
+        guard entries.indices.contains(index) else { return }
+        var copy = entries
+        mutate(&copy[index])
+        entries = copy
     }
 
     // MARK: SFSpeech recognition result handling (system audio / "Remote" only)
@@ -576,19 +583,21 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
         if shouldCommit {
             if let idx = activeSystemIdx, idx < entries.count {
-                entries[idx].text = uncommitted
-                entries[idx].isCommitted = true
+                updateEntry(at: idx) { entry in
+                    entry.text = uncommitted
+                    entry.isCommitted = true
+                }
             } else {
-                entries.append(TranscriptEntry(speaker: speaker, text: uncommitted, isCommitted: true))
+                entries = entries + [TranscriptEntry(speaker: speaker, text: uncommitted, isCommitted: true)]
             }
             committedSystemLen = fullText.count
             activeSystemIdx = nil; activeSystemStart = nil
         } else {
             if let idx = activeSystemIdx, idx < entries.count {
-                entries[idx].text = uncommitted
+                updateEntry(at: idx) { $0.text = uncommitted }
             } else {
                 let newIdx = entries.count
-                entries.append(TranscriptEntry(speaker: speaker, text: uncommitted))
+                entries = entries + [TranscriptEntry(speaker: speaker, text: uncommitted)]
                 activeSystemIdx = newIdx; activeSystemStart = now
             }
         }
@@ -596,7 +605,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
     private func freezeActiveEntry(speaker: String) {
         if let idx = activeSystemIdx, idx < entries.count {
-            entries[idx].isCommitted = true
+            updateEntry(at: idx) { $0.isCommitted = true }
         }
         activeSystemIdx = nil; activeSystemStart = nil
         committedSystemLen = 0

@@ -58,7 +58,6 @@ struct ContentView: View {
     @State private var rollingContextText = ""
     @State private var whisperModelState: WhisperModelState = WhisperEngine.isModelDownloaded ? .ready : .missing
     @State private var whisperDownloadProgress: String = ""
-    @State private var translationWork: Task<Void, Never>?
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -108,15 +107,17 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .onChange(of: recorder.entries.count) {
+        .onChange(of: recorder.entries.count) { _, _ in
             translateCommittedEntries()
             updateSuggestionContext()
         }
-        .onChange(of: committedEntrySignature) {
+        .onChange(of: committedEntrySignature) { _, _ in
             updateSuggestionContext()
             translateCommittedEntries()
         }
-        .onChange(of: liveTranslationSignature) { translateCommittedEntries() }
+        .onChange(of: liveTranslationSignature) { _, _ in
+            translateCommittedEntries()
+        }
         .onChange(of: recorder.state) {
             if recorder.state == .completed && summaryModelManager.isReady {
                 showSummary = true
@@ -129,26 +130,22 @@ struct ContentView: View {
         .onAppear {
             refreshPermissionStatus()
             suggestionCoordinator.logAvailabilityIfNeeded()
+            translationService.onTranslated = { entryID, source, translated in
+                applyTranslation(entryID: entryID, source: source, translated: translated)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshPermissionStatus()
         }
-        .onReceive(timer) {
-            now = $0
-            updateSuggestionContext()
-        }
+        .onReceive(timer) { now = $0; updateSuggestionContext() }
         .onChange(of: translationService.isSessionReady) { _, ready in
-            if ready {
-                translateCommittedEntries()
-            } else {
-                translationWork?.cancel()
-                translationWork = nil
-            }
+            if ready { translateCommittedEntries() }
         }
         .onChange(of: translationService.isEnabled) { _, enabled in
-            if !enabled {
-                translationWork?.cancel()
-                translationWork = nil
+            if enabled {
+                translateCommittedEntries()
+            } else {
+                translationService.clearSession()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .showMeetingHistory)) { _ in
@@ -1343,7 +1340,7 @@ struct ContentView: View {
 
         if let lastIdx = entries.indices.last,
            !entries[lastIdx].isCommitted,
-           entries[lastIdx].text.count > 40 {
+           entries[lastIdx].text.count > 20 {
             let e = entries[lastIdx]
             let needsTranslation = e.translatedText == nil
                 || (e.translatedSourceText != nil && e.translatedSourceText != e.text)
@@ -1356,9 +1353,7 @@ struct ContentView: View {
     }
 
     private func translateCommittedEntries() {
-        guard translationService.isEnabled,
-              translationService.isAvailable,
-              translationService.isSessionReady else { return }
+        guard translationService.isEnabled, translationService.isAvailable else { return }
 
         let entries = recorder.entries
         guard !entries.isEmpty else { return }
@@ -1366,55 +1361,20 @@ struct ContentView: View {
         let indicesToTranslate = indicesNeedingTranslation(in: entries)
         guard !indicesToTranslate.isEmpty else { return }
 
-        // One serial worker — do not cancel on every trigger (timer used to cancel every second).
-        guard translationWork == nil else { return }
-
-        translationWork = Task { @MainActor in
-            defer {
-                translationWork = nil
-                if !indicesNeedingTranslation(in: recorder.entries).isEmpty {
-                    translateCommittedEntries()
-                }
-            }
-
-            for idx in indicesToTranslate {
-                if Task.isCancelled { return }
-                guard idx < recorder.entries.count else { continue }
-
-                let entry = recorder.entries[idx]
-                if entry.translatedText != nil,
-                   entry.translatedSourceText == entry.text {
-                    continue
-                }
-
-                let text = entry.text
-
-                var contextLines: [String] = []
-                for prev in max(0, idx - 2)..<idx {
-                    if prev < recorder.entries.count {
-                        contextLines.append(recorder.entries[prev].text)
-                    }
-                }
-
-                let translated: String?
-                if contextLines.isEmpty {
-                    translated = await translationService.translate(text)
-                } else {
-                    let contextBlock = contextLines.joined(separator: " ")
-                    translated = await translationService.translateWithContext(
-                        text: text,
-                        context: contextBlock
-                    )
-                }
-
-                if Task.isCancelled { return }
-
-                if let translated, idx < recorder.entries.count {
-                    recorder.entries[idx].translatedText = translated
-                    recorder.entries[idx].translatedSourceText = text
-                }
-            }
+        mplog("Translation: scheduling \(indicesToTranslate.count) entries")
+        for idx in indicesToTranslate {
+            guard idx < recorder.entries.count else { continue }
+            let entry = recorder.entries[idx]
+            translationService.scheduleTranslation(entryID: entry.id, text: entry.text)
         }
+    }
+
+    private func applyTranslation(entryID: UUID, source: String, translated: String) {
+        guard let idx = recorder.entries.firstIndex(where: { $0.id == entryID }) else { return }
+        var copy = recorder.entries
+        copy[idx].translatedText = translated
+        copy[idx].translatedSourceText = source
+        recorder.entries = copy
     }
 
     // MARK: - Helpers
@@ -1461,7 +1421,14 @@ private struct TranslationTaskModifierImpl: ViewModifier {
     func body(content: Content) -> some View {
         content
             .translationTask(config) { session in
-                translationService.setSession(session)
+                await translationService.attachSession(session)
+                while !Task.isCancelled {
+                    await translationService.runQueuedTranslations(using: session)
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                }
+                await MainActor.run {
+                    translationService.clearSession()
+                }
             }
             .onAppear { updateConfig() }
             .onChange(of: translationService.isEnabled) { updateConfig() }
