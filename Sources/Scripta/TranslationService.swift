@@ -30,6 +30,7 @@ final class TranslationService: ObservableObject {
         }
     }
     @Published private(set) var isAvailable: Bool = false
+    @Published private(set) var isSessionReady: Bool = false
     @Published var configurationNeedsUpdate: Bool = false
 
     static let supportedLanguages: [(code: String, name: String)] = [
@@ -91,14 +92,23 @@ final class TranslationService: ObservableObject {
     }
 
     @available(macOS 15.0, *)
+    @MainActor
     func setSession(_ session: TranslationSession) {
         activeSession = session
+        isSessionReady = true
         mplog("Translation: session ready (\(sourceLanguageCode) → \(targetLanguageCode))")
     }
     #endif
 
+    @MainActor
+    func clearSession() {
+        activeSession = nil
+        isSessionReady = false
+    }
+
+    @MainActor
     func translate(_ text: String) async -> String? {
-        guard isEnabled, isAvailable,
+        guard isEnabled, isAvailable, isSessionReady,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
 
         #if compiler(>=6.0) && canImport(Translation)
@@ -122,13 +132,15 @@ final class TranslationService: ObservableObject {
     /// Translate text with preceding context for better quality.
     /// Uses a delimiter to separate context from the target text, then extracts just
     /// the translated target portion.
+    @MainActor
     func translateWithContext(text: String, context: String) async -> String? {
-        guard isEnabled, isAvailable,
+        guard isEnabled, isAvailable, isSessionReady,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
 
         #if compiler(>=6.0) && canImport(Translation)
         if #available(macOS 15.0, *) {
             guard let session = activeSession as? TranslationSession else {
+                mplog("Translation: no active session (context)")
                 return nil
             }
             do {

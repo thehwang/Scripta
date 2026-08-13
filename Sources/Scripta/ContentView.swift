@@ -58,6 +58,7 @@ struct ContentView: View {
     @State private var rollingContextText = ""
     @State private var whisperModelState: WhisperModelState = WhisperEngine.isModelDownloaded ? .ready : .missing
     @State private var whisperDownloadProgress: String = ""
+    @State private var translationWork: Task<Void, Never>?
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -126,6 +127,9 @@ struct ContentView: View {
             now = $0
             translateCommittedEntries()
             updateSuggestionContext()
+        }
+        .onChange(of: translationService.isSessionReady) { _, ready in
+            if ready { translateCommittedEntries() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .showMeetingHistory)) { _ in
             showHistoryPanel = true
@@ -1306,7 +1310,9 @@ struct ContentView: View {
     }
 
     private func translateCommittedEntries() {
-        guard translationService.isEnabled, translationService.isAvailable else { return }
+        guard translationService.isEnabled,
+              translationService.isAvailable,
+              translationService.isSessionReady else { return }
         let entries = recorder.entries
         guard !entries.isEmpty else { return }
 
@@ -1334,8 +1340,10 @@ struct ContentView: View {
 
         guard !indicesToTranslate.isEmpty else { return }
 
-        Task {
+        translationWork?.cancel()
+        translationWork = Task { @MainActor in
             for idx in indicesToTranslate {
+                if Task.isCancelled { return }
                 guard idx < self.recorder.entries.count else { continue }
                 let text = self.recorder.entries[idx].text
 
@@ -1358,13 +1366,11 @@ struct ContentView: View {
                     )
                 }
 
-                if let translated {
-                    await MainActor.run {
-                        if idx < self.recorder.entries.count {
-                            self.recorder.entries[idx].translatedText = translated
-                            self.recorder.entries[idx].translatedSourceText = text
-                        }
-                    }
+                if Task.isCancelled { return }
+
+                if let translated, idx < self.recorder.entries.count {
+                    self.recorder.entries[idx].translatedText = translated
+                    self.recorder.entries[idx].translatedSourceText = text
                 }
             }
         }
@@ -1427,6 +1433,7 @@ private struct TranslationTaskModifierImpl: ViewModifier {
     }
 
     private func updateConfig() {
+        translationService.clearSession()
         guard translationService.isEnabled, translationService.isAvailable else {
             config = nil
             return
