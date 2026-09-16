@@ -12,6 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var savedFullFrame: NSRect?
     private var isShowingSetup = false
 
+    func applicationWillTerminate(_ notification: Notification) {
+        recorder.releaseMicrophoneCapture()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.set(DisplayMode.full.rawValue, forKey: "Scripta.displayMode")
         loadAppIcon()

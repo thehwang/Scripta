@@ -997,6 +997,8 @@ struct ContentView: View {
                 summaryButton
             }
 
+            echoCancellationControl
+
             if recorder.isRecording {
                 stopButton
             } else {
@@ -1010,6 +1012,38 @@ struct ContentView: View {
                 .background(.ultraThinMaterial)
                 .overlay(alignment: .top) { Divider().background(Theme.borderLight) }
         }
+    }
+
+    private var echoCancellationControl: some View {
+        Menu {
+            ForEach(EchoCancellationMode.allCases) { mode in
+                Button {
+                    recorder.echoCancellationMode = mode
+                } label: {
+                    HStack {
+                        Text("Echo cancellation: \(mode.rawValue)")
+                        if recorder.echoCancellationMode == mode {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 11))
+                Text("Echo \(recorder.echoCancellationMode.rawValue)")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(Theme.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.10), in: Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(recorder.isRecording || recorder.state == .transcribing)
+        .help(recorder.echoCancellationMode.helpText)
     }
 
     private var summaryButton: some View {

@@ -22,6 +22,11 @@ final class MeetingRecorder: NSObject, ObservableObject {
     @Published private(set) var lastError: String = ""
     @Published var saveAudio: Bool = true
     @Published var micMuted: Bool = false
+    @Published var echoCancellationMode: EchoCancellationMode = EchoCancellationMode.stored {
+        didSet {
+            UserDefaults.standard.set(echoCancellationMode.rawValue, forKey: EchoCancellationMode.defaultsKey)
+        }
+    }
 
     var isRecording: Bool { state == .recording }
 
@@ -95,6 +100,22 @@ final class MeetingRecorder: NSObject, ObservableObject {
     private static let commitCharsWithPunct = 50
 
     private var isStarting = false
+    private var resolvedMicrophoneCapture = ResolvedMicrophoneCapture.resolve(mode: .auto)
+
+    private let pipelineHealthLock = NSLock()
+    private var lastSystemBufferAt: Date?
+    private var lastRemoteResultAt: Date?
+    private var lastAudibleSystemAudioAt: Date?
+    private var hadAudibleSystemAudio = false
+    private var pipelineWatchdogTask: Task<Void, Never>?
+    private var isRecoveringPipeline = false
+
+    private static let pipelineWatchdogInterval: TimeInterval = 10
+    private static let systemBufferStallThreshold: TimeInterval = 10
+    private static let remoteResultStallThreshold: TimeInterval = 30
+    private static let silentCaptureStallThreshold: TimeInterval = 45
+    private static let proactiveSpeechTaskRestartInterval: TimeInterval = 300
+    private static let audibleRMSThreshold: Float = 0.0008
 
     // MARK: Public API
 
@@ -137,6 +158,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
             try await beginRecordingPipeline()
 
             startAudioWriters()
+            startPipelineWatchdog()
             mplog("startRecording: pipeline started, state = recording")
         } catch let error as SystemAudioCapture.CaptureError where error == .permissionDenied {
             recordingStartedAt = nil
@@ -156,6 +178,10 @@ final class MeetingRecorder: NSObject, ObservableObject {
         }
     }
 
+    func releaseMicrophoneCapture() {
+        releaseAudioEngine()
+    }
+
     func stopRecording() {
         guard state == .recording else { return }
         state = .transcribing
@@ -163,8 +189,8 @@ final class MeetingRecorder: NSObject, ObservableObject {
         mplog("stopRecording: transitioning to transcribing")
         recordingEndedAt = Date()
 
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
+        stopPipelineWatchdog()
+        releaseAudioEngine()
         whisperEngine.flush()
         systemRequest?.endAudio()
 
@@ -201,6 +227,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         micToWhisperConverter = nil
         micTempURL = nil; systemTempURL = nil
         whisperEngine.reset()
+        stopPipelineWatchdog()
         Task { await systemAudioCapture.stop() }
     }
 
@@ -287,6 +314,10 @@ final class MeetingRecorder: NSObject, ObservableObject {
         }
         mplog("[system] SFSpeech recognizer ready: available=\(speechRecognizer.isAvailable) onDevice=\(speechRecognizer.supportsOnDeviceRecognition)")
 
+        resolvedMicrophoneCapture = ResolvedMicrophoneCapture.resolve(mode: echoCancellationMode)
+        mplog("Mic capture profile: \(resolvedMicrophoneCapture.logMessage)")
+        statusMessage = "Recording — \(resolvedMicrophoneCapture.statusDetail)"
+
         try startAudioEngineForWhisper()
 
         systemAudioCapture.onAudioSampleBuffer = { [weak self] sampleBuffer in
@@ -305,6 +336,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
     private func handleSystemAudioBuffer(_ sampleBuffer: CMSampleBuffer) {
         guard let pcm = Self.pcmBuffer(from: sampleBuffer) else { return }
 
+        noteSystemBufferReceived(rms: Self.audioRMS(pcm))
         systemBufferCount += 1
         if systemBufferCount == 1 || systemBufferCount == 10 || systemBufferCount == 100 {
             mplog("System audio: buffer #\(systemBufferCount) frames=\(pcm.frameLength) rate=\(pcm.format.sampleRate) ch=\(pcm.format.channelCount) fmt=\(pcm.format.commonFormat.rawValue)")
@@ -358,18 +390,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         let inputNode = audioEngine.inputNode
         inputNode.removeTap(onBus: 0)
 
-        do {
-            try inputNode.setVoiceProcessingEnabled(true)
-            if #available(macOS 14.0, *) {
-                inputNode.voiceProcessingOtherAudioDuckingConfiguration =
-                    .init(enableAdvancedDucking: false, duckingLevel: .min)
-                mplog("Voice Processing IO enabled (AEC + noise suppression, ducking disabled)")
-            } else {
-                mplog("Voice Processing IO enabled (AEC + noise suppression)")
-            }
-        } catch {
-            mplog("Voice Processing IO failed: \(error.localizedDescription) — continuing without AEC")
-        }
+        configureVoiceProcessing(on: inputNode)
 
         let hwFormat = inputNode.inputFormat(forBus: 0)
         mplog("Mic hardware format: rate=\(hwFormat.sampleRate) ch=\(hwFormat.channelCount) bits=\(hwFormat.streamDescription.pointee.mBitsPerChannel)")
@@ -477,6 +498,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
             guard let self else { return }
 
             if let result {
+                self.noteRemoteResultReceived()
                 self.systemTaskProducedResult = true
                 self.systemRetryCount = 0
 
@@ -641,6 +663,10 @@ final class MeetingRecorder: NSObject, ObservableObject {
             return
         }
 
+        systemTask?.cancel()
+        systemTask = nil
+        systemRequest?.endAudio()
+
         let newReq = Self.makeSpeechRequest()
         committedSystemLen = 0
         lastTaskCreationTime = Date()
@@ -651,7 +677,177 @@ final class MeetingRecorder: NSObject, ObservableObject {
         systemTask = speechRecognizer.recognitionTask(with: newReq) { [weak self] result, error in
             self?.handleRecognitionResult(result: result, error: error, speaker: "Remote")
         }
+        noteRemoteResultReceived()
         mplog("[Remote] SFSpeech task #\(systemTaskCount) restarted")
+    }
+
+    // MARK: Pipeline health watchdog
+
+    private func startPipelineWatchdog() {
+        stopPipelineWatchdog()
+        let now = Date()
+        pipelineHealthLock.lock()
+        lastSystemBufferAt = now
+        lastRemoteResultAt = now
+        lastAudibleSystemAudioAt = nil
+        hadAudibleSystemAudio = false
+        pipelineHealthLock.unlock()
+
+        pipelineWatchdogTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(Self.pipelineWatchdogInterval * 1_000_000_000))
+                guard let self, self.state == .recording else { break }
+                await self.evaluatePipelineHealth()
+            }
+        }
+    }
+
+    private func stopPipelineWatchdog() {
+        pipelineWatchdogTask?.cancel()
+        pipelineWatchdogTask = nil
+    }
+
+    private func noteSystemBufferReceived(rms: Float) {
+        pipelineHealthLock.lock()
+        let now = Date()
+        lastSystemBufferAt = now
+        if rms >= Self.audibleRMSThreshold {
+            lastAudibleSystemAudioAt = now
+            hadAudibleSystemAudio = true
+        }
+        pipelineHealthLock.unlock()
+    }
+
+    private func noteRemoteResultReceived() {
+        pipelineHealthLock.lock()
+        lastRemoteResultAt = Date()
+        pipelineHealthLock.unlock()
+    }
+
+    @MainActor
+    private func evaluatePipelineHealth() async {
+        guard state == .recording, !isRecoveringPipeline else { return }
+
+        let now = Date()
+        pipelineHealthLock.lock()
+        let lastBuffer = lastSystemBufferAt
+        let lastRemote = lastRemoteResultAt
+        let lastAudible = lastAudibleSystemAudioAt
+        let audibleBefore = hadAudibleSystemAudio
+        pipelineHealthLock.unlock()
+
+        guard let lastBuffer else { return }
+
+        let bufferStall = now.timeIntervalSince(lastBuffer)
+        let remoteStall = lastRemote.map { now.timeIntervalSince($0) } ?? Self.remoteResultStallThreshold + 1
+        let audibleStall = lastAudible.map { now.timeIntervalSince($0) }
+        let taskAge = systemTaskStartTime.map { now.timeIntervalSince($0) } ?? 0
+
+        if bufferStall >= Self.systemBufferStallThreshold {
+            mplog("Watchdog: no system audio buffers for \(String(format: "%.1f", bufferStall))s → restarting capture")
+            await recoverSystemAudioCapture(reason: "buffer stall")
+            return
+        }
+
+        if let audibleStall,
+           audibleBefore,
+           audibleStall >= Self.silentCaptureStallThreshold,
+           remoteStall >= Self.remoteResultStallThreshold {
+            mplog(
+                "Watchdog: silent system audio for \(String(format: "%.1f", audibleStall))s " +
+                "with no remote results → restarting capture"
+            )
+            await recoverSystemAudioCapture(reason: "silent capture")
+            return
+        }
+
+        if remoteStall >= Self.remoteResultStallThreshold {
+            mplog("Watchdog: no remote results for \(String(format: "%.1f", remoteStall))s → restarting speech task")
+            await recoverRemoteRecognition(reason: "result stall")
+            return
+        }
+
+        if taskAge >= Self.proactiveSpeechTaskRestartInterval {
+            mplog("Watchdog: SFSpeech task age \(String(format: "%.0f", taskAge))s → proactive restart")
+            await recoverRemoteRecognition(reason: "task age")
+        }
+    }
+
+    private func recoverSystemAudioCapture(reason: String) async {
+        guard state == .recording else { return }
+        guard !isRecoveringPipeline else { return }
+        isRecoveringPipeline = true
+        defer { isRecoveringPipeline = false }
+
+        systemTask?.cancel()
+        systemTask = nil
+        systemRequest?.endAudio()
+        systemRequest = nil
+        systemAudioConverter = nil
+
+        await systemAudioCapture.stop()
+        do {
+            try await systemAudioCapture.restart()
+            let now = Date()
+            pipelineHealthLock.lock()
+            lastSystemBufferAt = now
+            lastRemoteResultAt = now
+            pipelineHealthLock.unlock()
+            systemRecognitionStarted = true
+            await MainActor.run {
+                self.restartSystemRecognitionTask()
+                self.statusMessage = "Recording — recovered system audio (\(reason))"
+            }
+            mplog("Watchdog: system audio capture recovered (\(reason))")
+        } catch {
+            mplog("Watchdog: system audio restart failed: \(error.localizedDescription)")
+            await MainActor.run {
+                self.statusMessage = "Remote audio capture stalled — recovery failed."
+            }
+        }
+    }
+
+    @MainActor
+    private func recoverRemoteRecognition(reason: String) async {
+        guard state == .recording, !isRecoveringPipeline else { return }
+        isRecoveringPipeline = true
+        defer { isRecoveringPipeline = false }
+
+        systemTask?.cancel()
+        systemTask = nil
+        systemRequest?.endAudio()
+        systemRequest = nil
+        committedSystemLen = 0
+        activeSystemIdx = nil
+        activeSystemStart = nil
+        restartSystemRecognitionTask()
+        statusMessage = "Recording — recovered remote transcription (\(reason))"
+        mplog("Watchdog: remote recognition recovered (\(reason))")
+    }
+
+    private static func audioRMS(_ buffer: AVAudioPCMBuffer) -> Float {
+        let frames = Int(buffer.frameLength)
+        guard frames > 0 else { return 0 }
+
+        if let channel = buffer.floatChannelData?[0] {
+            var sum: Float = 0
+            for index in 0..<frames {
+                let sample = channel[index]
+                sum += sample * sample
+            }
+            return sqrt(sum / Float(frames))
+        }
+
+        if let channel = buffer.int16ChannelData?[0] {
+            var sum: Float = 0
+            for index in 0..<frames {
+                let sample = Float(channel[index]) / 32_768.0
+                sum += sample * sample
+            }
+            return sqrt(sum / Float(frames))
+        }
+
+        return 0
     }
 
     // MARK: System audio -> Apple Speech recognition request
@@ -868,13 +1064,53 @@ final class MeetingRecorder: NSObject, ObservableObject {
         }
     }
 
+    private func releaseAudioEngine() {
+        let inputNode = audioEngine.inputNode
+        inputNode.removeTap(onBus: 0)
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
+        disableVoiceProcessing(on: inputNode)
+        audioEngine.reset()
+        mplog("Audio engine released")
+    }
+
+    private func configureVoiceProcessing(on inputNode: AVAudioInputNode) {
+        if !resolvedMicrophoneCapture.usesVoiceProcessing {
+            disableVoiceProcessing(on: inputNode)
+            mplog("Voice Processing IO skipped — \(resolvedMicrophoneCapture.logMessage)")
+            return
+        }
+
+        do {
+            try inputNode.setVoiceProcessingEnabled(true)
+            if #available(macOS 14.0, *) {
+                inputNode.voiceProcessingOtherAudioDuckingConfiguration =
+                    .init(enableAdvancedDucking: false, duckingLevel: .min)
+                mplog("Voice Processing IO enabled (AEC + noise suppression, ducking disabled)")
+            } else {
+                mplog("Voice Processing IO enabled (AEC + noise suppression)")
+            }
+        } catch {
+            mplog("Voice Processing IO failed: \(error.localizedDescription) — continuing without AEC")
+        }
+    }
+
+    private func disableVoiceProcessing(on inputNode: AVAudioInputNode) {
+        do {
+            try inputNode.setVoiceProcessingEnabled(false)
+        } catch {
+            mplog("disableVoiceProcessing failed: \(error.localizedDescription)")
+        }
+    }
+
     private func setFailure(_ message: String) {
         state = .failed
         lastError = message
         statusMessage = "Failed: \(message)"
         mplog("FAILURE: \(message)")
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
+        stopPipelineWatchdog()
+        releaseAudioEngine()
         whisperEngine.reset()
         Task { await systemAudioCapture.stop() }
         systemRequest?.endAudio()

@@ -87,6 +87,11 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
         self.stream = nil
     }
 
+    func restart() async throws {
+        await stop()
+        try await start()
+    }
+
     // MARK: SCStreamDelegate
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
