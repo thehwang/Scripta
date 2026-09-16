@@ -61,7 +61,7 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
         let config = SCStreamConfiguration()
         config.capturesAudio = true
         config.excludesCurrentProcessAudio = true
-        config.sampleRate = 16_000
+        config.sampleRate = 48_000
         config.channelCount = 1
         config.queueDepth = 8
         config.width = 2

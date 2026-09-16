@@ -21,6 +21,7 @@ final class WhisperEngine {
     private var isProcessing = false
 
     var onTranscript: ((String) -> Void)?
+    var language: String = "en"
 
     static let defaultModelName = "ggml-base.bin"
 
@@ -127,7 +128,7 @@ final class WhisperEngine {
             params.print_special = false
             params.no_context = true
             params.single_segment = false
-            let langStr = strdup("en")
+            let langStr = strdup(self.language)
             params.language = UnsafePointer(langStr)
             params.n_threads = 4
 
