@@ -64,9 +64,6 @@ final class TranslationService: ObservableObject {
            let parsed = TranslationDisplayMode(rawValue: mode) {
             displayMode = parsed
         }
-        if let src = UserDefaults.standard.string(forKey: "Scripta.translationSource"), !src.isEmpty {
-            sourceLanguageCode = src
-        }
         if let tgt = UserDefaults.standard.string(forKey: "Scripta.translationTarget"), !tgt.isEmpty {
             targetLanguageCode = tgt
         }
@@ -99,6 +96,13 @@ final class TranslationService: ObservableObject {
         return TranslationSession.Configuration(source: src, target: tgt)
     }
     #endif
+
+    func syncSourceLanguage(withMeetingLanguage recognitionLanguage: String) {
+        let source = MeetingLanguage.translationSourceCode(from: recognitionLanguage)
+        if sourceLanguageCode != source {
+            sourceLanguageCode = source
+        }
+    }
 
     @MainActor
     func clearSession() {

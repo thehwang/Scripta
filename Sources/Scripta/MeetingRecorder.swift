@@ -116,6 +116,9 @@ final class MeetingRecorder: NSObject, ObservableObject {
     private static let silentCaptureStallThreshold: TimeInterval = 45
     private static let proactiveSpeechTaskRestartInterval: TimeInterval = 300
     private static let audibleRMSThreshold: Float = 0.0008
+    private static let maxPendingRecognitionBuffers = 80
+
+    private var pendingRecognitionBuffers: [AVAudioPCMBuffer] = []
 
     // MARK: Public API
 
@@ -139,7 +142,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
             }
         }
 
-        whisperEngine.language = recognitionLanguage.components(separatedBy: "-").first?.lowercased() ?? "en"
+        whisperEngine.language = MeetingLanguage.whisperCode(from: recognitionLanguage)
         whisperEngine.onTranscript = { [weak self] text in
             guard let self, self.state == .recording, !self.micMuted else { return }
             self.appendWhisperTranscript(text)
@@ -182,6 +185,20 @@ final class MeetingRecorder: NSObject, ObservableObject {
         releaseAudioEngine()
     }
 
+    /// Tears down audio capture and Whisper before app exit.
+    func prepareForTermination() async {
+        mplog("prepareForTermination: shutting down recording pipeline")
+        stopPipelineWatchdog()
+        systemRequest?.endAudio()
+        systemTask?.cancel()
+        systemTask = nil
+        systemRequest = nil
+        releaseAudioEngine()
+        whisperEngine.shutdown()
+        await systemAudioCapture.stop()
+        mplog("prepareForTermination: complete")
+    }
+
     func stopRecording() {
         guard state == .recording else { return }
         state = .transcribing
@@ -221,6 +238,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         systemTaskStartTime = nil; systemTaskCount = 0
         systemRecognitionStarted = false; lastTaskCreationTime = nil
         systemTask?.cancel(); systemTask = nil; systemRequest = nil
+        systemAppendQueue.sync { pendingRecognitionBuffers.removeAll() }
         speechRecognizer = nil
         systemAudioConverter = nil
         micAudioFile = nil; systemAudioFile = nil
@@ -319,6 +337,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         statusMessage = "Recording — \(resolvedMicrophoneCapture.statusDetail)"
 
         try startAudioEngineForWhisper()
+        startSystemRecognitionLazily()
 
         systemAudioCapture.onAudioSampleBuffer = { [weak self] sampleBuffer in
             self?.handleSystemAudioBuffer(sampleBuffer)
@@ -330,7 +349,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
             }
         }
         try await systemAudioCapture.start()
-        mplog("Recording pipeline started: mic→whisper.cpp, system→SFSpeech (deferred)")
+        mplog("Recording pipeline started: mic→whisper.cpp, system→SFSpeech")
     }
 
     private func handleSystemAudioBuffer(_ sampleBuffer: CMSampleBuffer) {
@@ -363,8 +382,38 @@ final class MeetingRecorder: NSObject, ObservableObject {
             }
         }
 
+        appendSystemBufferToRecognition(buffer)
+    }
+
+    private func appendSystemBufferToRecognition(_ buffer: AVAudioPCMBuffer) {
         systemAppendQueue.async { [weak self] in
-            self?.systemRequest?.append(buffer)
+            guard let self else { return }
+            if let request = self.systemRequest {
+                request.append(buffer)
+            } else if self.pendingRecognitionBuffers.count < Self.maxPendingRecognitionBuffers {
+                self.pendingRecognitionBuffers.append(buffer)
+            } else {
+                self.pendingRecognitionBuffers.removeFirst()
+                self.pendingRecognitionBuffers.append(buffer)
+            }
+        }
+    }
+
+    private func flushPendingRecognitionBuffers(to request: SFSpeechAudioBufferRecognitionRequest) {
+        for buffer in pendingRecognitionBuffers {
+            request.append(buffer)
+        }
+        if !pendingRecognitionBuffers.isEmpty {
+            mplog("[Remote] flushed \(pendingRecognitionBuffers.count) pending audio buffers")
+            pendingRecognitionBuffers.removeAll()
+        }
+    }
+
+    private func installSystemRecognitionRequest(_ request: SFSpeechAudioBufferRecognitionRequest) {
+        systemAppendQueue.async { [weak self] in
+            guard let self else { return }
+            self.systemRequest = request
+            self.flushPendingRecognitionBuffers(to: request)
         }
     }
 
@@ -373,7 +422,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
               state == .recording, systemTask == nil else { return }
 
         let sysReq = Self.makeSpeechRequest()
-        systemRequest = sysReq
+        installSystemRecognitionRequest(sysReq)
         systemTaskCount += 1
         systemTaskStartTime = Date()
         lastTaskCreationTime = Date()
@@ -665,19 +714,21 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
         systemTask?.cancel()
         systemTask = nil
-        systemRequest?.endAudio()
+        systemAppendQueue.sync {
+            systemRequest?.endAudio()
+            systemRequest = nil
+        }
 
         let newReq = Self.makeSpeechRequest()
         committedSystemLen = 0
         lastTaskCreationTime = Date()
         systemTaskProducedResult = false
-        systemRequest = newReq
+        installSystemRecognitionRequest(newReq)
         systemTaskCount += 1
         systemTaskStartTime = Date()
         systemTask = speechRecognizer.recognitionTask(with: newReq) { [weak self] result, error in
             self?.handleRecognitionResult(result: result, error: error, speaker: "Remote")
         }
-        noteRemoteResultReceived()
         mplog("[Remote] SFSpeech task #\(systemTaskCount) restarted")
     }
 
@@ -781,8 +832,11 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
         systemTask?.cancel()
         systemTask = nil
-        systemRequest?.endAudio()
-        systemRequest = nil
+        systemAppendQueue.sync {
+            systemRequest?.endAudio()
+            systemRequest = nil
+            pendingRecognitionBuffers.removeAll()
+        }
         systemAudioConverter = nil
 
         await systemAudioCapture.stop()
@@ -813,10 +867,12 @@ final class MeetingRecorder: NSObject, ObservableObject {
         isRecoveringPipeline = true
         defer { isRecoveringPipeline = false }
 
+        freezeActiveEntry(speaker: "Remote")
         systemTask?.cancel()
         systemTask = nil
         systemRequest?.endAudio()
         systemRequest = nil
+        systemAppendQueue.sync { pendingRecognitionBuffers.removeAll() }
         committedSystemLen = 0
         activeSystemIdx = nil
         activeSystemStart = nil

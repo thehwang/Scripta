@@ -14,6 +14,7 @@ struct ChatPanel: View {
     let transcriptText: String
     let modelName: String
     let isModelReady: Bool
+    let outputLanguageInstruction: String
     @Binding var pendingQuestion: String?
 
     @StateObject private var summaryService = SummaryService()
@@ -252,7 +253,8 @@ struct ChatPanel: View {
                     transcript: transcript,
                     chatHistory: history,
                     question: trimmed,
-                    modelName: model
+                    modelName: model,
+                    outputLanguageInstruction: outputLanguageInstruction
                 )
                 await MainActor.run {
                     messages.append(ChatMessage(role: "assistant", text: result, timestamp: Date()))

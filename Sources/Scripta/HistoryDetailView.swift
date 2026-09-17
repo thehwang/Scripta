@@ -37,6 +37,7 @@ struct HistoryDetailView: View {
                     transcriptText: transcript,
                     modelName: modelName,
                     isModelReady: isModelReady,
+                    outputLanguageInstruction: MeetingLanguage.outputLanguageInstruction(for: "en-US"),
                     pendingQuestion: $chatPendingQuestion
                 )
                 .frame(minWidth: 320, idealWidth: 380, maxWidth: 480)

@@ -8,6 +8,8 @@ public struct TranscriptEntry: Identifiable {
     public var isCommitted: Bool
     /// The text that was used to produce translatedText, so we can detect staleness
     public var translatedSourceText: String?
+    /// Target language code used for translatedText (e.g. zh-Hans, de)
+    public var translatedTargetLanguageCode: String?
     public let timestamp: Date
 
     public init(speaker: String, text: String, translatedText: String? = nil, isCommitted: Bool = false, timestamp: Date = Date()) {

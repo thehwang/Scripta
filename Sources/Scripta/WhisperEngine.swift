@@ -19,6 +19,7 @@ final class WhisperEngine {
 
     private(set) var isLoaded = false
     private var isProcessing = false
+    private var isShuttingDown = false
 
     var onTranscript: ((String) -> Void)?
     var language: String = "en"
@@ -38,13 +39,47 @@ final class WhisperEngine {
         FileManager.default.fileExists(atPath: defaultModelPath.path)
     }
 
+    var isMultilingualModel: Bool {
+        guard let ctx else { return false }
+        return whisper_is_multilingual(ctx) != 0
+    }
+
+    func supportsRecognitionLanguage(_ recognitionLanguage: String) -> Bool {
+        if MeetingLanguage.isEnglish(recognitionLanguage) { return true }
+        return isMultilingualModel
+    }
+
     init() {}
 
     deinit {
-        if let ctx { whisper_free(ctx) }
+        shutdown()
+    }
+
+    /// Releases the whisper context and waits for in-flight transcription to finish.
+    /// Must run before process exit to avoid ggml Metal teardown races.
+    func shutdown() {
+        processingQueue.sync {
+            guard !isShuttingDown else { return }
+            isShuttingDown = true
+
+            if let ctx {
+                whisper_free(ctx)
+                self.ctx = nil
+            }
+
+            isLoaded = false
+            isProcessing = false
+            bufferLock.lock()
+            sampleBuffer.removeAll()
+            bufferLock.unlock()
+            onTranscript = nil
+            mplog("WhisperEngine: shut down")
+        }
     }
 
     func loadModel(at path: URL? = nil) -> Bool {
+        guard !isShuttingDown else { return false }
+
         let modelPath = path ?? Self.defaultModelPath
         guard FileManager.default.fileExists(atPath: modelPath.path) else {
             mplog("WhisperEngine: model not found at \(modelPath.path)")
@@ -68,6 +103,8 @@ final class WhisperEngine {
     }
 
     func appendSamples(_ samples: UnsafePointer<Float>, count: Int) {
+        guard !isShuttingDown else { return }
+
         bufferLock.lock()
         sampleBuffer.append(contentsOf: UnsafeBufferPointer(start: samples, count: count))
         let ready = sampleBuffer.count >= chunkSamples

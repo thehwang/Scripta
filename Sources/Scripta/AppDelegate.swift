@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import ScriptaCore
 import SwiftUI
 
@@ -12,8 +13,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var savedFullFrame: NSRect?
     private var isShowingSetup = false
 
-    func applicationWillTerminate(_ notification: Notification) {
-        recorder.releaseMicrophoneCapture()
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Task { @MainActor in
+            await recorder.prepareForTermination()
+            // whisper.cpp's ggml Metal backend can abort during C++ static teardown on
+            // normal exit(); skip atexit handlers after explicit cleanup.
+            _exit(0)
+        }
+        return .terminateLater
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

@@ -130,6 +130,8 @@ struct ContentView: View {
         .onAppear {
             refreshPermissionStatus()
             suggestionCoordinator.logAvailabilityIfNeeded()
+            translationService.syncSourceLanguage(withMeetingLanguage: recorder.recognitionLanguage)
+            checkWhisperLanguageSupport()
             translationService.onTranslated = { entryID, source, translated in
                 applyTranslation(entryID: entryID, source: source, translated: translated)
             }
@@ -147,6 +149,19 @@ struct ContentView: View {
             } else {
                 translationService.clearSession()
             }
+        }
+        .onChange(of: recorder.recognitionLanguage) { _, code in
+            translationService.syncSourceLanguage(withMeetingLanguage: code)
+            checkLanguageAvailability()
+            checkWhisperLanguageSupport()
+        }
+        .onChange(of: translationService.targetLanguageCode) { _, _ in
+            invalidateTranslationCache()
+            translateCommittedEntries()
+        }
+        .onChange(of: translationService.sourceLanguageCode) { _, _ in
+            invalidateTranslationCache()
+            translateCommittedEntries()
         }
         .onReceive(NotificationCenter.default.publisher(for: .showMeetingHistory)) { _ in
             showHistoryPanel = true
@@ -260,6 +275,7 @@ struct ContentView: View {
                     transcriptText: chatTranscriptText,
                     modelName: summaryModelManager.selectedModel,
                     isModelReady: summaryModelManager.isReady,
+                    outputLanguageInstruction: MeetingLanguage.outputLanguageInstruction(for: recorder.recognitionLanguage),
                     pendingQuestion: $chatPendingQuestion
                 )
                 .frame(minWidth: 320, idealWidth: 380, maxWidth: 480)
@@ -769,6 +785,7 @@ struct ContentView: View {
                 whisperModelState = .ready
                 whisperDownloadProgress = ""
                 _ = recorder.whisperEngine.loadModel()
+                checkWhisperLanguageSupport()
             }
         }
     }
@@ -1109,13 +1126,16 @@ struct ContentView: View {
     }
 
     @State private var languageModelMissing = false
+    @State private var whisperLanguageUnsupported = false
 
     private var languagePicker: some View {
         Menu {
             ForEach(MeetingRecorder.supportedRecognitionLanguages, id: \.code) { lang in
                 Button {
                     recorder.recognitionLanguage = lang.code
+                    translationService.syncSourceLanguage(withMeetingLanguage: lang.code)
                     checkLanguageAvailability()
+                    checkWhisperLanguageSupport()
                 } label: {
                     HStack {
                         Text(lang.name)
@@ -1137,13 +1157,13 @@ struct ContentView: View {
                     .font(.system(size: 10))
                 Text(currentLanguageName)
                     .font(.system(size: 10, weight: .medium))
-                if languageModelMissing {
+                if languageModelMissing || whisperLanguageUnsupported {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 8))
                         .foregroundStyle(.yellow)
                 }
             }
-            .foregroundStyle(languageModelMissing ? .yellow : Theme.textSecondary)
+            .foregroundStyle((languageModelMissing || whisperLanguageUnsupported) ? .yellow : Theme.textSecondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.white.opacity(0.10), in: Capsule())
@@ -1172,6 +1192,15 @@ struct ContentView: View {
                 languageModelMissing = !available
             }
         }
+    }
+
+    private func checkWhisperLanguageSupport() {
+        let code = recorder.recognitionLanguage
+        if MeetingLanguage.isEnglish(code) {
+            whisperLanguageUnsupported = false
+            return
+        }
+        whisperLanguageUnsupported = !recorder.whisperEngine.supportsRecognitionLanguage(code)
     }
 
     private var translationControls: some View {
@@ -1330,7 +1359,8 @@ struct ContentView: View {
         Task {
             await summaryService.generateSummary(
                 from: recorder.entries,
-                modelName: summaryModelManager.selectedModel
+                modelName: summaryModelManager.selectedModel,
+                outputLanguageInstruction: MeetingLanguage.outputLanguageInstruction(for: recorder.recognitionLanguage)
             )
             if !summaryService.streamingText.isEmpty, !recorder.exportedFilePath.isEmpty {
                 saveSummaryToExport()
@@ -1361,13 +1391,12 @@ struct ContentView: View {
     }
 
     private func indicesNeedingTranslation(in entries: [TranscriptEntry]) -> [Int] {
+        let targetCode = translationService.targetLanguageCode
         var indices: [Int] = []
         for i in entries.indices {
             let e = entries[i]
             guard e.isCommitted else { continue }
-            let needsTranslation = e.translatedText == nil
-                || (e.translatedSourceText != nil && e.translatedSourceText != e.text)
-            if needsTranslation {
+            if entryNeedsTranslation(e, targetCode: targetCode) {
                 indices.append(i)
             }
         }
@@ -1376,14 +1405,30 @@ struct ContentView: View {
            !entries[lastIdx].isCommitted,
            entries[lastIdx].text.count > 20 {
             let e = entries[lastIdx]
-            let needsTranslation = e.translatedText == nil
-                || (e.translatedSourceText != nil && e.translatedSourceText != e.text)
-            if needsTranslation {
+            if entryNeedsTranslation(e, targetCode: targetCode) {
                 indices.append(lastIdx)
             }
         }
 
         return indices
+    }
+
+    private func entryNeedsTranslation(_ entry: TranscriptEntry, targetCode: String) -> Bool {
+        entry.translatedText == nil
+            || entry.translatedTargetLanguageCode != targetCode
+            || (entry.translatedSourceText != nil && entry.translatedSourceText != entry.text)
+    }
+
+    private func invalidateTranslationCache() {
+        guard !recorder.entries.isEmpty else { return }
+        var copy = recorder.entries
+        for index in copy.indices {
+            copy[index].translatedText = nil
+            copy[index].translatedSourceText = nil
+            copy[index].translatedTargetLanguageCode = nil
+        }
+        recorder.entries = copy
+        translationService.clearSession()
     }
 
     private func translateCommittedEntries() {
@@ -1408,6 +1453,7 @@ struct ContentView: View {
         var copy = recorder.entries
         copy[idx].translatedText = translated
         copy[idx].translatedSourceText = source
+        copy[idx].translatedTargetLanguageCode = translationService.targetLanguageCode
         recorder.entries = copy
     }
 

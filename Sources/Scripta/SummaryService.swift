@@ -15,7 +15,11 @@ final class SummaryService: ObservableObject {
     /// Conservative chars-per-token estimate that holds for mixed English/Chinese content.
     private static let charsPerToken = 3.5
 
-    func generateSummary(from entries: [TranscriptEntry], modelName: String) async {
+    func generateSummary(
+        from entries: [TranscriptEntry],
+        modelName: String,
+        outputLanguageInstruction: String = MeetingLanguage.outputLanguageInstruction(for: "en-US")
+    ) async {
         let transcript = entries.map { "[\($0.speaker)] \($0.text)" }.joined(separator: "\n")
         guard !transcript.isEmpty else {
             await MainActor.run { lastError = "No transcript to summarize." }
@@ -34,7 +38,11 @@ final class SummaryService: ObservableObject {
         }
 
         let contextTokens = SummaryModelManager.contextWindow(for: modelName)
-        let prompt = buildPrompt(transcript: transcript, contextTokens: contextTokens)
+        let prompt = buildPrompt(
+            transcript: transcript,
+            contextTokens: contextTokens,
+            outputLanguageInstruction: outputLanguageInstruction
+        )
         mplog("Summary: model=\(modelName) ctx=\(contextTokens) transcriptChars=\(transcript.count) promptChars=\(prompt.count)")
 
         guard let url = URL(string: "\(Self.baseURL)/api/generate") else {
@@ -134,7 +142,8 @@ final class SummaryService: ObservableObject {
         transcript: String,
         chatHistory: [(role: String, text: String)],
         question: String,
-        modelName: String
+        modelName: String,
+        outputLanguageInstruction: String = MeetingLanguage.outputLanguageInstruction(for: "en-US")
     ) async throws -> String {
         guard !modelName.isEmpty else { throw ChatError.noModel }
 
@@ -150,6 +159,7 @@ final class SummaryService: ObservableObject {
         if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             prompt = """
             You are a helpful AI assistant. Be concise and specific.
+            \(outputLanguageInstruction)
 
             """
         } else {
@@ -158,6 +168,7 @@ final class SummaryService: ObservableObject {
                 : transcript
             prompt = """
             You are an AI assistant helping analyze a meeting transcript. Answer questions based ONLY on the transcript content. Be concise and specific.
+            \(outputLanguageInstruction)
 
             MEETING TRANSCRIPT:
             \(truncated)
@@ -246,7 +257,11 @@ final class SummaryService: ObservableObject {
         }
     }
 
-    private func buildPrompt(transcript: String, contextTokens: Int) -> String {
+    private func buildPrompt(
+        transcript: String,
+        contextTokens: Int,
+        outputLanguageInstruction: String
+    ) -> String {
         // Size transcript truncation to the model's actual context window.
         // Reserve overhead for the prompt template + the maxTokens we want for output.
         let availableTokens = max(1_500, contextTokens - Self.promptOverheadTokens)
@@ -262,6 +277,7 @@ final class SummaryService: ObservableObject {
 
         return """
         You summarize meetings. Be concise. Output ONLY the summary, nothing else.
+        \(outputLanguageInstruction)
 
         Summarize this meeting transcript.
 
