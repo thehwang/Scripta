@@ -154,7 +154,13 @@ jobs:
     needs: [build-macos26, build-macos15, build-macos14]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download macOS 26 artifact
         uses: actions/download-artifact@v4
         with:
@@ -202,8 +208,6 @@ jobs:
           EOF
 
       - name: Create or update GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
             gh release edit "${{ github.ref_name }}" \
@@ -218,8 +222,6 @@ jobs:
           fi
 
       - name: Upload release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           for zip in artifacts/*.zip; do
             echo "Uploading $(basename "$zip")..."
@@ -227,6 +229,4 @@ jobs:
           done
 
       - name: Publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: gh release edit "${{ github.ref_name }}" --draft=false
