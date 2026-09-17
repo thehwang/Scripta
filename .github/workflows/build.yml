@@ -174,31 +174,59 @@ jobs:
           name: Scripta-macos14
           path: artifacts/
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: artifacts/*
-          body: |
-            ## Installation
+      - name: Prepare release notes
+        run: |
+          cat > /tmp/release-notes.md <<'EOF'
+          ## Installation
 
-            | File | macOS Version | Real-time Translation | FM Suggestions |
-            |------|---------------|-----------------------|----------------|
-            | `Scripta-macos26.zip` | macOS 26+ | Yes (Apple Translation) | Yes (Apple Intelligence) |
-            | `Scripta-macos15.zip` | macOS 15–25 | Yes (Apple Translation) | No |
-            | `Scripta-macos14.zip` | macOS 14 | No | No |
+          | File | macOS Version | Real-time Translation | FM Suggestions |
+          |------|---------------|-----------------------|----------------|
+          | `Scripta-macos26.zip` | macOS 26+ | Yes (Apple Translation) | Yes (Apple Intelligence) |
+          | `Scripta-macos15.zip` | macOS 15–25 | Yes (Apple Translation) | No |
+          | `Scripta-macos14.zip` | macOS 14 | No | No |
 
-            ### One-line install:
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh | bash
-            ```
-            Auto-detects your macOS version, downloads the right zip, installs app + Ollama + AI model + Whisper speech model, and launches.
+          ### One-line install:
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/thehwang/Scripta/main/scripts/install.sh | bash
+          ```
+          Auto-detects your macOS version, downloads the right zip, installs app + Ollama + AI model + Whisper speech model, and launches.
 
-            ### Or install manually:
-            Download the zip above, then `unzip` and `bash install.sh`.
+          ### Or install manually:
+          Download the zip above, then `unzip` and `bash install.sh`.
 
-            ### What's new
-            - **Meeting suggestions** on macOS 26 (on-device Foundation Models + Ollama deep ask)
-            - **whisper.cpp** for microphone transcription (100% local, Metal-accelerated)
-            - **SFSpeechRecognizer** for system audio (no more dual-task XPC conflicts)
-            - Whisper model auto-download in install script and in-app prompt
+          ### What's new
+          - **Meeting suggestions** on macOS 26 (on-device Foundation Models + Ollama deep ask)
+          - **whisper.cpp** for microphone transcription (100% local, Metal-accelerated)
+          - **SFSpeechRecognizer** for system audio (no more dual-task XPC conflicts)
+          - Whisper model auto-download in install script and in-app prompt
+          EOF
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            gh release edit "${{ github.ref_name }}" \
+              --title "${{ github.ref_name }}" \
+              --notes-file /tmp/release-notes.md \
+              --draft=true
+          else
+            gh release create "${{ github.ref_name }}" \
+              --title "${{ github.ref_name }}" \
+              --notes-file /tmp/release-notes.md \
+              --draft
+          fi
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for zip in artifacts/*.zip; do
+            echo "Uploading $(basename "$zip")..."
+            gh release upload "${{ github.ref_name }}" "$zip" --clobber
+          done
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ github.ref_name }}" --draft=false
