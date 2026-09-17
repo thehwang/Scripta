@@ -156,9 +156,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         win.center()
     }
 
-    private func configureHostingController(_ hosting: NSHostingController<some View>) {
+    private func configureHostingController(
+        _ hosting: NSHostingController<some View>,
+        sizing: NSHostingSizingOptions = []
+    ) {
         if #available(macOS 13.0, *) {
-            hosting.sizingOptions = .intrinsicContentSize
+            hosting.sizingOptions = sizing
         }
     }
 
@@ -287,7 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showMainWindow()
         }
         let hosting = NSHostingController(rootView: permView)
-        configureHostingController(hosting)
+        configureHostingController(hosting, sizing: .intrinsicContentSize)
         let win = window ?? NSWindow(contentViewController: hosting)
         win.contentViewController = hosting
         win.title = "Scripta"
@@ -302,7 +305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showMainWindow()
         }
         let hosting = NSHostingController(rootView: setupView)
-        configureHostingController(hosting)
+        configureHostingController(hosting, sizing: .intrinsicContentSize)
         let win = window ?? NSWindow(contentViewController: hosting)
         win.contentViewController = hosting
         win.title = "Scripta — AI Model Setup"
@@ -330,7 +333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         let hosting = NSHostingController(rootView: rootView)
-        configureHostingController(hosting)
+        configureHostingController(hosting, sizing: .standardBounds)
 
         let fontScale = UserDefaults.standard.double(forKey: "Scripta.fontScale")
 

@@ -292,32 +292,37 @@ struct ContentView: View {
                     topBar
                     Divider().background(Theme.border)
 
-                    if !hasMicPermission && recorder.state == .idle {
-                        permissionBanner.padding(.horizontal, 20).padding(.top, 16)
-                    }
-                    if !summaryModelManager.isReady && recorder.state == .idle {
-                        aiModelBanner.padding(.horizontal, 20).padding(.top, 16)
-                    }
-                    if whisperModelState != .ready && recorder.state == .idle {
-                        whisperModelBanner.padding(.horizontal, 20).padding(.top, 16)
-                    }
-                    statusStrip.padding(.horizontal, 20).padding(.top, 16)
-                    transcriptPanel
-                        .padding(.horizontal, 20)
-                        .padding(.top, 12)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    VStack(spacing: 0) {
+                        if !hasMicPermission && recorder.state == .idle {
+                            permissionBanner.padding(.horizontal, 20).padding(.top, 16)
+                        }
+                        if !summaryModelManager.isReady && recorder.state == .idle {
+                            aiModelBanner.padding(.horizontal, 20).padding(.top, 16)
+                        }
+                        if whisperModelState != .ready && recorder.state == .idle {
+                            whisperModelBanner.padding(.horizontal, 20).padding(.top, 16)
+                        }
+                        statusStrip.padding(.horizontal, 20).padding(.top, 16)
+                        transcriptPanel
+                            .padding(.horizontal, 20)
+                            .padding(.top, 12)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                    if showSummary || summaryService.isGenerating || !summaryService.streamingText.isEmpty {
-                        summaryPanel.padding(.horizontal, 20).padding(.top, 8)
-                    }
+                        if showSummary || summaryService.isGenerating || !summaryService.streamingText.isEmpty {
+                            summaryPanel.padding(.horizontal, 20).padding(.top, 8)
+                        }
 
-                    exportStrip.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 8)
+                        exportStrip.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 8)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
                     suggestionStripIfNeeded
                         .padding(.horizontal, 20)
                     bottomBar
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(minWidth: 560)
+            .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
 
             if showChatPanel {
                 ChatPanel(
@@ -331,7 +336,12 @@ struct ContentView: View {
                 .layoutPriority(1)
             }
         }
-        .frame(minWidth: fullWindowMinWidth, minHeight: fullWindowMinHeight)
+        .frame(
+            minWidth: fullWindowMinWidth,
+            idealWidth: fullWindowMinWidth,
+            minHeight: fullWindowMinHeight,
+            maxHeight: .infinity
+        )
         .sheet(isPresented: $showHistoryPanel) {
             HistoryPanel(
                 store: meetingStore,
