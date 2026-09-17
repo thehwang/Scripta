@@ -223,9 +223,28 @@ jobs:
 
       - name: Upload release assets
         run: |
-          for zip in artifacts/*.zip; do
-            echo "Uploading $(basename "$zip")..."
-            gh release upload "${{ github.ref_name }}" "$zip" --clobber
+          upload_with_retry() {
+            local file="$1"
+            local name
+            name=$(basename "$file")
+            local attempt=1
+            while [ "$attempt" -le 5 ]; do
+              if gh release upload "${{ github.ref_name }}" "$file" --clobber; then
+                echo "Uploaded $name"
+                return 0
+              fi
+              echo "Upload failed for $name (attempt $attempt), retrying..."
+              sleep $((attempt * 15))
+              attempt=$((attempt + 1))
+            done
+            echo "Failed to upload $name after 5 attempts"
+            return 1
+          }
+
+          for zip in artifacts/Scripta-macos26.zip artifacts/Scripta-macos15.zip artifacts/Scripta-macos14.zip; do
+            [ -f "$zip" ] || continue
+            upload_with_retry "$zip"
+            sleep 5
           done
 
       - name: Publish release
