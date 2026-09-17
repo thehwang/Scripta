@@ -99,88 +99,129 @@ struct ContentView: View {
     }
 
     var body: some View {
-        Group {
-            if isMinimal {
-                minimalBody
-            } else {
-                fullBody
-            }
+        rootWithAlerts
+    }
+
+    @ViewBuilder
+    private var modeRoot: some View {
+        if isMinimal {
+            minimalBody
+        } else {
+            fullBody
         }
-        .preferredColorScheme(.dark)
-        .onChange(of: recorder.entries.count) { _, _ in
-            translateCommittedEntries()
-            updateSuggestionContext()
-        }
-        .onChange(of: committedEntrySignature) { _, _ in
-            updateSuggestionContext()
-            translateCommittedEntries()
-        }
-        .onChange(of: liveTranslationSignature) { _, _ in
-            translateCommittedEntries()
-        }
-        .onChange(of: recorder.state) {
-            if recorder.state == .completed && summaryModelManager.isReady {
-                showSummary = true
-            }
-            if recorder.state != .recording {
-                suggestionCoordinator.reset()
-            }
-        }
-        .task { await summaryModelManager.checkConnection() }
-        .onAppear {
-            refreshPermissionStatus()
-            suggestionCoordinator.logAvailabilityIfNeeded()
-            translationService.syncSourceLanguage(withMeetingLanguage: recorder.recognitionLanguage)
-            checkWhisperLanguageSupport()
-            translationService.onTranslated = { entryID, source, translated in
-                applyTranslation(entryID: entryID, source: source, translated: translated)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshPermissionStatus()
-        }
-        .onReceive(timer) { now = $0; updateSuggestionContext() }
-        .onChange(of: translationService.isSessionReady) { _, ready in
-            if ready { translateCommittedEntries() }
-        }
-        .onChange(of: translationService.isEnabled) { _, enabled in
-            if enabled {
+    }
+
+    private var rootWithLifecycle: some View {
+        modeRoot
+            .preferredColorScheme(.dark)
+            .onChange(of: recorder.entries.count) { _, _ in
                 translateCommittedEntries()
-            } else {
-                translationService.clearSession()
+                updateSuggestionContext()
             }
-        }
-        .onChange(of: recorder.recognitionLanguage) { _, code in
-            translationService.syncSourceLanguage(withMeetingLanguage: code)
-            checkLanguageAvailability()
-            checkWhisperLanguageSupport()
-        }
-        .onChange(of: translationService.targetLanguageCode) { _, _ in
-            invalidateTranslationCache()
-            translateCommittedEntries()
-        }
-        .onChange(of: translationService.sourceLanguageCode) { _, _ in
-            invalidateTranslationCache()
-            translateCommittedEntries()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showMeetingHistory)) { _ in
-            showHistoryPanel = true
-        }
-        .modifier(TranslationTaskModifier(translationService: translationService))
-        .alert("Recording Notice", isPresented: $showRecordingDisclaimer) {
-            Button("I Understand & Agree") {
-                disclaimerAccepted = true
-                Task { @MainActor in await recorder.startRecording() }
+            .onChange(of: committedEntrySignature) { _, _ in
+                updateSuggestionContext()
+                translateCommittedEntries()
             }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Recording conversations may be subject to local consent laws. In many jurisdictions, all participants must be informed and consent before being recorded.\n\nYou are solely responsible for complying with applicable laws. By proceeding, you acknowledge this responsibility.")
+            .onChange(of: liveTranslationSignature) { _, _ in
+                translateCommittedEntries()
+            }
+            .onChange(of: recorder.state) {
+                handleRecorderStateChange()
+            }
+            .onChange(of: fontScale) { _, _ in
+                handleFontScaleChange()
+            }
+            .onChange(of: showChatPanel) { _, _ in
+                requestFullWindowLayout(animated: true)
+            }
+            .onChange(of: showSummary) { _, _ in
+                if !isMinimal {
+                    requestFullWindowLayout(animated: false)
+                }
+            }
+            .task { await summaryModelManager.checkConnection() }
+            .onAppear { handleAppear() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                refreshPermissionStatus()
+            }
+            .onReceive(timer) { now = $0; updateSuggestionContext() }
+            .onChange(of: translationService.isSessionReady) { _, ready in
+                if ready { translateCommittedEntries() }
+            }
+            .onChange(of: translationService.isEnabled) { _, enabled in
+                if enabled {
+                    translateCommittedEntries()
+                } else {
+                    translationService.clearSession()
+                }
+            }
+            .onChange(of: recorder.recognitionLanguage) { _, code in
+                translationService.syncSourceLanguage(withMeetingLanguage: code)
+                checkLanguageAvailability()
+                checkWhisperLanguageSupport()
+            }
+            .onChange(of: translationService.targetLanguageCode) { _, _ in
+                invalidateTranslationCache()
+                translateCommittedEntries()
+            }
+            .onChange(of: translationService.sourceLanguageCode) { _, _ in
+                invalidateTranslationCache()
+                translateCommittedEntries()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showMeetingHistory)) { _ in
+                showHistoryPanel = true
+            }
+            .modifier(TranslationTaskModifier(translationService: translationService))
+    }
+
+    private var rootWithAlerts: some View {
+        rootWithLifecycle
+            .alert("Recording Notice", isPresented: $showRecordingDisclaimer) {
+                Button("I Understand & Agree") {
+                    disclaimerAccepted = true
+                    Task { @MainActor in await recorder.startRecording() }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Recording conversations may be subject to local consent laws. In many jurisdictions, all participants must be informed and consent before being recorded.\n\nYou are solely responsible for complying with applicable laws. By proceeding, you acknowledge this responsibility.")
+            }
+            .onChange(of: suggestionCoordinator.currentSuggestion?.question) { _, _ in
+                if isMinimal { requestMinimalWindowLayout() }
+            }
+    }
+
+    private func handleRecorderStateChange() {
+        if recorder.state == .completed && summaryModelManager.isReady {
+            showSummary = true
         }
-        .onChange(of: showChatPanel) { _, isOpen in
-            if isOpen { ensureChatPanelWindowWidth() }
+        if recorder.state != .recording {
+            suggestionCoordinator.reset()
         }
-        .onChange(of: suggestionCoordinator.currentSuggestion?.question) { _, _ in
-            if isMinimal { requestMinimalWindowLayout() }
+        if !isMinimal {
+            requestFullWindowLayout(animated: true)
+        }
+    }
+
+    private func handleFontScaleChange() {
+        if isMinimal {
+            requestMinimalWindowLayout()
+        } else {
+            requestFullWindowLayout(animated: true)
+        }
+    }
+
+    private func handleAppear() {
+        refreshPermissionStatus()
+        suggestionCoordinator.logAvailabilityIfNeeded()
+        translationService.syncSourceLanguage(withMeetingLanguage: recorder.recognitionLanguage)
+        checkWhisperLanguageSupport()
+        translationService.onTranslated = { entryID, source, translated in
+            applyTranslation(entryID: entryID, source: source, translated: translated)
+        }
+        if isMinimal {
+            requestMinimalWindowLayout()
+        } else {
+            requestFullWindowLayout(animated: false)
         }
     }
 
@@ -207,7 +248,7 @@ struct ContentView: View {
             switchToMode(.full)
         }
         showChatPanel = true
-        ensureChatPanelWindowWidth()
+        requestFullWindowLayout(animated: true)
         suggestionCoordinator.dismissCurrent()
 
         // ChatPanel is created after showChatPanel flips; defer so onChange/onAppear can consume it.
@@ -219,16 +260,25 @@ struct ContentView: View {
         }
     }
 
-    private func ensureChatPanelWindowWidth() {
-        guard let window = NSApp.windows.first(where: { $0.title.hasPrefix("Scripta") }) else { return }
-        let minWidth: CGFloat = 980
-        guard window.frame.width < minWidth else { return }
+    private func requestFullWindowLayout(animated: Bool = false) {
+        NotificationCenter.default.post(
+            name: .fullWindowLayoutNeeded,
+            object: nil,
+            userInfo: [
+                WindowLayoutUserInfoKey.showChatPanel: showChatPanel,
+                WindowLayoutUserInfoKey.fontScale: fontScale,
+                WindowLayoutUserInfoKey.animated: animated,
+            ]
+        )
+    }
 
-        var frame = window.frame
-        let extra = minWidth - frame.width
-        frame.origin.x -= extra / 2
-        frame.size.width = minWidth
-        window.setFrame(frame, display: true, animate: true)
+    private var fullWindowMinWidth: CGFloat {
+        (showChatPanel ? WindowLayout.fullChatWidth : WindowLayout.fullBaseWidth)
+            * WindowLayout.normalizedFontScale(fontScale)
+    }
+
+    private var fullWindowMinHeight: CGFloat {
+        WindowLayout.fullBaseHeight * WindowLayout.normalizedFontScale(fontScale)
     }
 
     // MARK: - Full Mode Body
@@ -242,27 +292,26 @@ struct ContentView: View {
                     topBar
                     Divider().background(Theme.border)
 
-                    VStack(spacing: 0) {
-                        if !hasMicPermission && recorder.state == .idle {
-                            permissionBanner.padding(.horizontal, 20).padding(.top, 16)
-                        }
-                        if !summaryModelManager.isReady && recorder.state == .idle {
-                            aiModelBanner.padding(.horizontal, 20).padding(.top, 16)
-                        }
-                        if whisperModelState != .ready && recorder.state == .idle {
-                            whisperModelBanner.padding(.horizontal, 20).padding(.top, 16)
-                        }
-                        statusStrip.padding(.horizontal, 20).padding(.top, 16)
-                        transcriptPanel.padding(.horizontal, 20).padding(.top, 12)
+                    if !hasMicPermission && recorder.state == .idle {
+                        permissionBanner.padding(.horizontal, 20).padding(.top, 16)
+                    }
+                    if !summaryModelManager.isReady && recorder.state == .idle {
+                        aiModelBanner.padding(.horizontal, 20).padding(.top, 16)
+                    }
+                    if whisperModelState != .ready && recorder.state == .idle {
+                        whisperModelBanner.padding(.horizontal, 20).padding(.top, 16)
+                    }
+                    statusStrip.padding(.horizontal, 20).padding(.top, 16)
+                    transcriptPanel
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                        if showSummary || summaryService.isGenerating || !summaryService.streamingText.isEmpty {
-                            summaryPanel.padding(.horizontal, 20).padding(.top, 8)
-                        }
-
-                        exportStrip.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 8)
+                    if showSummary || summaryService.isGenerating || !summaryService.streamingText.isEmpty {
+                        summaryPanel.padding(.horizontal, 20).padding(.top, 8)
                     }
 
-                    Spacer(minLength: 0)
+                    exportStrip.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 8)
                     suggestionStripIfNeeded
                         .padding(.horizontal, 20)
                     bottomBar
@@ -282,7 +331,7 @@ struct ContentView: View {
                 .layoutPriority(1)
             }
         }
-        .frame(minWidth: showChatPanel ? 980 : 760, minHeight: 680)
+        .frame(minWidth: fullWindowMinWidth, minHeight: fullWindowMinHeight)
         .sheet(isPresented: $showHistoryPanel) {
             HistoryPanel(
                 store: meetingStore,
@@ -306,8 +355,8 @@ struct ContentView: View {
             suggestionStripIfNeeded
             minimalControlBar
         }
-        .frame(width: 560)
-        .fixedSize(horizontal: true, vertical: true)
+        .frame(minWidth: WindowLayout.minimalContentWidth(fontScale: fontScale))
+        .fixedSize(horizontal: false, vertical: true)
         .background(Color.black.opacity(0.82))
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -998,29 +1047,9 @@ struct ContentView: View {
     // MARK: - Bottom Bar
 
     private var bottomBar: some View {
-        HStack(spacing: 16) {
-            HStack(spacing: 4) {
-                micMuteButton
-                saveAudioButton
-            }
-
-            languagePicker
-
-            translationControls
-
-            Spacer()
-
-            if recorder.state == .completed && !recorder.entries.isEmpty {
-                summaryButton
-            }
-
-            echoCancellationControl
-
-            if recorder.isRecording {
-                stopButton
-            } else {
-                startButton
-            }
+        ViewThatFits(in: .horizontal) {
+            bottomBarSingleRow
+            bottomBarTwoRows
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -1029,6 +1058,51 @@ struct ContentView: View {
                 .background(.ultraThinMaterial)
                 .overlay(alignment: .top) { Divider().background(Theme.borderLight) }
         }
+    }
+
+    private var bottomBarSingleRow: some View {
+        HStack(spacing: 10) {
+            bottomBarLeadingControls
+            Spacer(minLength: 8)
+            bottomBarTrailingControls
+        }
+    }
+
+    private var bottomBarTwoRows: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            bottomBarLeadingControls
+            HStack {
+                Spacer(minLength: 0)
+                bottomBarTrailingControls
+            }
+        }
+    }
+
+    private var bottomBarLeadingControls: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
+                micMuteButton
+                saveAudioButton
+            }
+            languagePicker
+            translationControls
+        }
+        .lineLimit(1)
+    }
+
+    private var bottomBarTrailingControls: some View {
+        HStack(spacing: 8) {
+            if recorder.state == .completed && !recorder.entries.isEmpty {
+                summaryButton
+            }
+            echoCancellationControl
+            if recorder.isRecording {
+                stopButton
+            } else {
+                startButton
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var echoCancellationControl: some View {
@@ -1079,6 +1153,7 @@ struct ContentView: View {
             .background(Theme.accent.opacity(summaryModelManager.isReady ? 0.15 : 0.05), in: Capsule())
         }
         .buttonStyle(.plain)
+        .fixedSize()
         .disabled(!summaryModelManager.isReady || summaryService.isGenerating)
         .help(summaryModelManager.isReady ? "Generate AI summary" : "Connect Ollama and select a model first")
         .accessibilityIdentifier("SummarizeButton")
@@ -1100,6 +1175,7 @@ struct ContentView: View {
             .background(Theme.accent, in: Capsule())
         }
         .buttonStyle(.plain)
+        .fixedSize()
         .disabled(recorder.state == .transcribing)
         .opacity(recorder.state == .transcribing ? 0.4 : 1)
         .accessibilityIdentifier("RecordButton")
@@ -1122,6 +1198,7 @@ struct ContentView: View {
             .shadow(color: Color.red.opacity(0.3), radius: 8, y: 2)
         }
         .buttonStyle(.plain)
+        .fixedSize()
         .accessibilityIdentifier("StopButton")
     }
 

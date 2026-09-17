@@ -38,6 +38,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(handleMinimalWindowLayoutNeeded),
             name: .minimalWindowLayoutNeeded, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleFullWindowLayoutNeeded(_:)),
+            name: .fullWindowLayoutNeeded, object: nil
+        )
+    }
+
+    @objc private func handleFullWindowLayoutNeeded(_ note: Notification) {
+        guard let win = window,
+              UserDefaults.standard.string(forKey: "Scripta.displayMode") != DisplayMode.minimal.rawValue else { return }
+        let showChat = note.userInfo?[WindowLayoutUserInfoKey.showChatPanel] as? Bool ?? false
+        let fontScale = note.userInfo?[WindowLayoutUserInfoKey.fontScale] as? Double
+            ?? UserDefaults.standard.double(forKey: "Scripta.fontScale")
+        let animated = note.userInfo?[WindowLayoutUserInfoKey.animated] as? Bool ?? false
+        DispatchQueue.main.async { [weak self] in
+            self?.applyFullWindowFrame(win, showChatPanel: showChat, fontScale: fontScale, animated: animated)
+        }
     }
 
     @objc private func handleMinimalWindowLayoutNeeded() {
@@ -53,9 +69,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         win.contentView?.layoutSubtreeIfNeeded()
 
-        let fitting = win.contentView?.fittingSize ?? NSSize(width: 560, height: 96)
-        let contentWidth = min(900, max(480, fitting.width))
-        let contentHeight = min(280, max(72, fitting.height))
+        let fontScale = UserDefaults.standard.double(forKey: "Scripta.fontScale")
+        let minWidth = WindowLayout.minimalContentWidth(fontScale: fontScale)
+        let fitting = win.contentView?.fittingSize ?? NSSize(width: minWidth, height: 96)
+        let contentWidth = min(900, max(minWidth, fitting.width))
+        let contentHeight = min(320, max(72, fitting.height))
         let contentSize = NSSize(width: contentWidth, height: contentHeight)
 
         var frame = win.frameRect(forContentRect: NSRect(origin: .zero, size: contentSize))
@@ -74,6 +92,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         win.setFrame(frame, display: true, animate: animated)
+    }
+
+    private func resetWindowForFullMode(_ win: NSWindow) {
+        win.standardWindowButton(.closeButton)?.isHidden = false
+        win.standardWindowButton(.miniaturizeButton)?.isHidden = false
+        win.standardWindowButton(.zoomButton)?.isHidden = false
+        win.level = .normal
+        win.isMovableByWindowBackground = false
+        win.titlebarAppearsTransparent = false
+        win.titleVisibility = .visible
+        win.backgroundColor = nil
+        win.isOpaque = true
+        win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+    }
+
+    private func applyFullWindowFrame(
+        _ win: NSWindow,
+        showChatPanel: Bool,
+        fontScale: Double,
+        animated: Bool,
+        force: Bool = false
+    ) {
+        resetWindowForFullMode(win)
+
+        let target = WindowLayout.fullContentSize(showChatPanel: showChatPanel, fontScale: fontScale)
+        win.minSize = WindowLayout.fullMinSize(showChatPanel: showChatPanel, fontScale: fontScale)
+        win.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+        let current = win.contentRect(forFrameRect: win.frame).size
+        let needsGrow = current.width < target.width - 4 || current.height < target.height - 4
+        guard force || needsGrow else { return }
+
+        var frame = win.frameRect(forContentRect: NSRect(origin: .zero, size: target))
+        if force {
+            frame.origin.x = win.frame.midX - frame.width / 2
+            frame.origin.y = win.frame.midY - frame.height / 2
+        } else {
+            frame.origin = win.frame.origin
+        }
+        if let screen = win.screen ?? NSScreen.main {
+            if frame.maxY > screen.visibleFrame.maxY - 8 {
+                frame.origin.y = screen.visibleFrame.maxY - frame.height - 8
+            }
+            if frame.minY < screen.visibleFrame.minY + 8 {
+                frame.origin.y = screen.visibleFrame.minY + 8
+            }
+            if frame.maxX > screen.visibleFrame.maxX - 8 {
+                frame.origin.x = screen.visibleFrame.maxX - frame.width - 8
+            }
+            if frame.minX < screen.visibleFrame.minX + 8 {
+                frame.origin.x = screen.visibleFrame.minX + 8
+            }
+        }
+        win.setFrame(frame, display: true, animate: animated)
+    }
+
+    private func applyPermissionsWindowFrame(_ win: NSWindow) {
+        win.styleMask = [.titled, .closable]
+        win.minSize = WindowLayout.permissionsMinSize
+        win.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        win.setContentSize(WindowLayout.permissionsContentSize)
+        win.center()
     }
 
     private func configureHostingController(_ hosting: NSHostingController<some View>) {
@@ -151,23 +231,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         case .full:
-            win.standardWindowButton(.closeButton)?.isHidden = false
-            win.standardWindowButton(.miniaturizeButton)?.isHidden = false
-            win.standardWindowButton(.zoomButton)?.isHidden = false
-            win.level = .normal
-            win.isMovableByWindowBackground = false
-            win.titlebarAppearsTransparent = false
-            win.titleVisibility = .visible
-            win.backgroundColor = nil
-            win.isOpaque = true
-            win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            win.minSize = NSSize(width: 760, height: 680)
-            win.maxSize = NSSize(width: .max, height: .max)
+            let fontScale = UserDefaults.standard.double(forKey: "Scripta.fontScale")
             if let saved = savedFullFrame {
+                resetWindowForFullMode(win)
+                win.minSize = WindowLayout.fullMinSize(showChatPanel: false, fontScale: fontScale)
+                win.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
                 win.setFrame(saved, display: true, animate: true)
             } else {
-                win.setContentSize(NSSize(width: 760, height: 680))
-                win.center()
+                applyFullWindowFrame(win, showChatPanel: false, fontScale: fontScale, animated: true)
             }
         }
     }
@@ -220,9 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let win = window ?? NSWindow(contentViewController: hosting)
         win.contentViewController = hosting
         win.title = "Scripta"
-        win.setContentSize(NSSize(width: 740, height: 480))
-        win.styleMask = [.titled, .closable]
-        win.center()
+        applyPermissionsWindowFrame(win)
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window = win
@@ -237,9 +306,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let win = window ?? NSWindow(contentViewController: hosting)
         win.contentViewController = hosting
         win.title = "Scripta — AI Model Setup"
-        win.setContentSize(NSSize(width: 560, height: 520))
+        win.setContentSize(WindowLayout.setupContentSize)
         win.styleMask = [.titled, .closable, .resizable]
-        win.minSize = NSSize(width: 540, height: 400)
+        win.minSize = WindowLayout.setupMinSize
         win.delegate = self
         win.center()
         win.makeKeyAndOrderFront(nil)
@@ -249,6 +318,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showMainWindow() {
+        UserDefaults.standard.set(DisplayMode.full.rawValue, forKey: "Scripta.displayMode")
+
         let rootView = ContentView(
             recorder: recorder,
             summaryModelManager: summaryModelManager,
@@ -261,19 +332,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hosting = NSHostingController(rootView: rootView)
         configureHostingController(hosting)
 
+        let fontScale = UserDefaults.standard.double(forKey: "Scripta.fontScale")
+
         if let win = window {
             win.contentViewController = hosting
             win.title = "Scripta"
-            win.setContentSize(NSSize(width: 760, height: 680))
-            win.styleMask.insert(.resizable)
+            win.delegate = self
+            applyFullWindowFrame(
+                win, showChatPanel: false, fontScale: fontScale, animated: false, force: true
+            )
             win.makeKeyAndOrderFront(nil)
         } else {
             let win = NSWindow(contentViewController: hosting)
             win.title = "Scripta"
-            win.setContentSize(NSSize(width: 760, height: 680))
-            win.styleMask.insert(.resizable)
             win.delegate = self
-            win.center()
+            applyFullWindowFrame(
+                win, showChatPanel: false, fontScale: fontScale, animated: false, force: true
+            )
             win.makeKeyAndOrderFront(nil)
             window = win
         }

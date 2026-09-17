@@ -30,15 +30,23 @@ struct PermissionsView: View {
         ZStack {
             Color(red: 0.071, green: 0.075, blue: 0.090).ignoresSafeArea()
 
-            VStack(spacing: 20) {
-                heroSection
-                cardsRow
-                Spacer(minLength: 4)
-                bottomSection
+            ScrollView {
+                VStack(spacing: 20) {
+                    heroSection
+                    cardsRow
+                    bottomSection
+                }
+                .padding(.top, 24)
+                .padding(.bottom, 12)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.top, 24)
         }
-        .frame(minWidth: 820, maxWidth: 920, minHeight: 440, maxHeight: 520)
+        .frame(
+            minWidth: WindowLayout.permissionsMinSize.width,
+            idealWidth: WindowLayout.permissionsContentSize.width,
+            minHeight: WindowLayout.permissionsMinSize.height,
+            idealHeight: WindowLayout.permissionsContentSize.height
+        )
         .onAppear { checkAllPermissions() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             checkAllPermissions()
