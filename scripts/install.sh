@@ -150,8 +150,10 @@ cp -R "$SOURCE_APP" "$APP_PATH"
 xattr -cr "$APP_PATH"
 
 info "Resetting permissions for clean authorization..."
+defaults delete "$BUNDLE_ID" Scripta.permissionsOnboardingComplete 2>/dev/null || true
 tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true
 tccutil reset Microphone "$BUNDLE_ID" 2>/dev/null || true
+tccutil reset SpeechRecognition "$BUNDLE_ID" 2>/dev/null || true
 
 touch "$APP_PATH"
 killall Dock 2>/dev/null || true

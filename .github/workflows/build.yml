@@ -11,6 +11,8 @@ permissions:
 jobs:
   build-macos15:
     runs-on: macos-15
+    env:
+      SCRIPTA_HAS_TRANSLATION: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,6 +60,9 @@ jobs:
 
   build-macos26:
     runs-on: macos-26
+    env:
+      SCRIPTA_HAS_TRANSLATION: "1"
+      SCRIPTA_HAS_FM_SUGGESTIONS: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -200,11 +205,10 @@ jobs:
           ### Or install manually:
           Download the zip above, then `unzip` and `bash install.sh`.
 
-          ### What's new
-          - **Meeting suggestions** on macOS 26 (on-device Foundation Models + Ollama deep ask)
-          - **whisper.cpp** for microphone transcription (100% local, Metal-accelerated)
-          - **SFSpeechRecognizer** for system audio (no more dual-task XPC conflicts)
-          - Whisper model auto-download in install script and in-app prompt
+          ### What's new in v3.4.5
+          - **Fix:** macOS 15/26 builds now compile with Apple Translation enabled
+          - **Fix:** `install.sh` resets permissions onboarding so reinstall shows the Permissions page
+          - Suggestions toggle, AI chat width-only resize, summary reset on new recording (from v3.4.4)
           EOF
 
       - name: Create or update GitHub Release
