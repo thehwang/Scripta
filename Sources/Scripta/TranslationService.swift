@@ -1,6 +1,6 @@
 import Foundation
 import ScriptaCore
-#if compiler(>=6.0) && canImport(Translation)
+#if SCRIPTA_HAS_TRANSLATION && canImport(Translation)
 import Translation
 #endif
 
@@ -71,7 +71,7 @@ final class TranslationService: ObservableObject {
     }
 
     private func checkAvailability() {
-        #if compiler(>=6.0) && canImport(Translation)
+        #if SCRIPTA_HAS_TRANSLATION && canImport(Translation)
         if #available(macOS 15.0, *) {
             isAvailable = true
             mplog("Translation: available (macOS 15+)")
@@ -88,7 +88,7 @@ final class TranslationService: ObservableObject {
         }
     }
 
-    #if compiler(>=6.0) && canImport(Translation)
+    #if SCRIPTA_HAS_TRANSLATION && canImport(Translation)
     @available(macOS 15.0, *)
     func makeConfiguration() -> TranslationSession.Configuration {
         let src = Locale.Language(identifier: sourceLanguageCode)
@@ -131,7 +131,7 @@ final class TranslationService: ObservableObject {
     @MainActor
     var hasPendingJobs: Bool { !queuedJobs.isEmpty }
 
-    #if compiler(>=6.0) && canImport(Translation)
+    #if SCRIPTA_HAS_TRANSLATION && canImport(Translation)
     @available(macOS 15.0, *)
     @MainActor
     func runQueuedTranslations(using session: TranslationSession) async {

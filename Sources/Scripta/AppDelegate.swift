@@ -10,7 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let summaryModelManager = SummaryModelManager()
     private let translationService = TranslationService()
     private let meetingStore = MeetingStore()
-    private var savedFullFrame: NSRect?
+    private var savedFullContentSize: NSSize?
     private var isShowingSetup = false
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -28,7 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loadAppIcon()
         setupMainMenu()
         setupMenuBar()
-        showPermissionsWindow()
+        if UserDefaults.standard.bool(forKey: "Scripta.permissionsOnboardingComplete") {
+            showMainWindow()
+        } else {
+            showPermissionsWindow()
+        }
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleDisplayModeChanged(_:)),
@@ -51,8 +55,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fontScale = note.userInfo?[WindowLayoutUserInfoKey.fontScale] as? Double
             ?? UserDefaults.standard.double(forKey: "Scripta.fontScale")
         let animated = note.userInfo?[WindowLayoutUserInfoKey.animated] as? Bool ?? false
+        let widthOnly = note.userInfo?[WindowLayoutUserInfoKey.widthOnly] as? Bool ?? false
         DispatchQueue.main.async { [weak self] in
-            self?.applyFullWindowFrame(win, showChatPanel: showChat, fontScale: fontScale, animated: animated)
+            self?.applyFullWindowFrame(
+                win,
+                showChatPanel: showChat,
+                fontScale: fontScale,
+                animated: animated,
+                widthOnly: widthOnly
+            )
         }
     }
 
@@ -72,24 +83,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fontScale = UserDefaults.standard.double(forKey: "Scripta.fontScale")
         let minWidth = WindowLayout.minimalContentWidth(fontScale: fontScale)
         let fitting = win.contentView?.fittingSize ?? NSSize(width: minWidth, height: 96)
-        let contentWidth = min(900, max(minWidth, fitting.width))
+        let contentWidth = min(WindowLayout.minimalMaxSize(fontScale: fontScale).width, max(minWidth, fitting.width))
         let contentHeight = min(320, max(72, fitting.height))
         let contentSize = NSSize(width: contentWidth, height: contentHeight)
 
         var frame = win.frameRect(forContentRect: NSRect(origin: .zero, size: contentSize))
-        frame.origin.x = screen.visibleFrame.midX - frame.width / 2
-
-        let bottomMargin = max(48, screen.visibleFrame.height * 0.06)
-        frame.origin.y = screen.visibleFrame.minY + bottomMargin
-
-        // Keep the entire window inside the visible area.
-        let topLimit = screen.visibleFrame.maxY - 24
-        if frame.maxY > topLimit {
-            frame.origin.y = topLimit - frame.height
-        }
-        if frame.minY < screen.visibleFrame.minY + 16 {
-            frame.origin.y = screen.visibleFrame.minY + 16
-        }
+        // Resize around the current center so the user can place the window anywhere.
+        frame.origin.x = win.frame.midX - frame.width / 2
+        frame.origin.y = win.frame.midY - frame.height / 2
+        clampWindowFrame(&frame, to: screen.visibleFrame)
 
         win.setFrame(frame, display: true, animate: animated)
     }
@@ -104,7 +106,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         win.titleVisibility = .visible
         win.backgroundColor = nil
         win.isOpaque = true
-        win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        var mask = win.styleMask
+        mask.insert([.titled, .closable, .miniaturizable, .resizable])
+        mask.remove(.fullSizeContentView)
+        win.styleMask = mask
+        win.contentResizeIncrements = NSSize(width: 1, height: 1)
     }
 
     private func applyFullWindowFrame(
@@ -112,40 +118,112 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showChatPanel: Bool,
         fontScale: Double,
         animated: Bool,
-        force: Bool = false
+        force: Bool = false,
+        preferredContentSize: NSSize? = nil,
+        recenter: Bool = false,
+        widthOnly: Bool = false
     ) {
         resetWindowForFullMode(win)
+        setHostingSizingOptions(win, sizing: .standardBounds)
 
-        let target = WindowLayout.fullContentSize(showChatPanel: showChatPanel, fontScale: fontScale)
-        win.minSize = WindowLayout.fullMinSize(showChatPanel: showChatPanel, fontScale: fontScale)
+        let screen = win.screen ?? NSScreen.main
+        let screenVisible = screen?.visibleFrame ?? .zero
+        let minSize = WindowLayout.fullMinSize(showChatPanel: showChatPanel, fontScale: fontScale)
+        let defaultTarget = WindowLayout.fullContentSize(showChatPanel: showChatPanel, fontScale: fontScale)
+        let current = win.contentRect(forFrameRect: win.frame).size
+
+        let target: NSSize
+        if widthOnly {
+            let scale = WindowLayout.normalizedFontScale(fontScale)
+            let targetWidth = (showChatPanel ? WindowLayout.fullChatWidth : WindowLayout.fullBaseWidth) * scale
+            let maxWidth = max(minSize.width, screenVisible.width - 32)
+            let clampedWidth = min(max(targetWidth, minSize.width), maxWidth)
+            target = NSSize(width: clampedWidth, height: max(current.height, minSize.height))
+        } else {
+            target = preferredContentSize.map {
+                WindowLayout.clampedFullContentSize(
+                    $0, showChatPanel: showChatPanel, fontScale: fontScale, screenVisible: screenVisible
+                )
+            } ?? defaultTarget
+        }
+
+        win.minSize = minSize
         win.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
-        let current = win.contentRect(forFrameRect: win.frame).size
-        let needsGrow = current.width < target.width - 4 || current.height < target.height - 4
-        guard force || needsGrow else { return }
+        let needsResize = widthOnly
+            ? abs(current.width - target.width) > 4
+            : abs(current.width - target.width) > 4 || abs(current.height - target.height) > 4
+        guard force || needsResize else {
+            ensureWindowOnScreen(win)
+            return
+        }
 
+        win.setContentSize(target)
         var frame = win.frameRect(forContentRect: NSRect(origin: .zero, size: target))
-        if force {
+        if recenter {
+            frame.origin.x = screenVisible.midX - frame.width / 2
+            frame.origin.y = screenVisible.midY - frame.height / 2
+        } else {
             frame.origin.x = win.frame.midX - frame.width / 2
             frame.origin.y = win.frame.midY - frame.height / 2
-        } else {
-            frame.origin = win.frame.origin
         }
-        if let screen = win.screen ?? NSScreen.main {
-            if frame.maxY > screen.visibleFrame.maxY - 8 {
-                frame.origin.y = screen.visibleFrame.maxY - frame.height - 8
-            }
-            if frame.minY < screen.visibleFrame.minY + 8 {
-                frame.origin.y = screen.visibleFrame.minY + 8
-            }
-            if frame.maxX > screen.visibleFrame.maxX - 8 {
-                frame.origin.x = screen.visibleFrame.maxX - frame.width - 8
-            }
-            if frame.minX < screen.visibleFrame.minX + 8 {
-                frame.origin.x = screen.visibleFrame.minX + 8
-            }
-        }
+        clampWindowFrame(&frame, to: screenVisible)
         win.setFrame(frame, display: true, animate: animated)
+        ensureWindowOnScreen(win)
+
+        // SwiftUI may settle one layout pass later; re-sync once content size is stable.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.ensureWindowOnScreen(win)
+            let settled = win.contentRect(forFrameRect: win.frame).size
+            if widthOnly {
+                if abs(settled.width - target.width) > 6 {
+                    win.setContentSize(NSSize(width: target.width, height: settled.height))
+                    self.ensureWindowOnScreen(win)
+                }
+            } else if abs(settled.height - target.height) > 6 || abs(settled.width - target.width) > 6 {
+                win.setContentSize(target)
+                self.ensureWindowOnScreen(win)
+            }
+        }
+    }
+
+    private func ensureWindowOnScreen(_ win: NSWindow) {
+        guard let screen = win.screen ?? NSScreen.main else { return }
+        var frame = win.frame
+        clampWindowFrame(&frame, to: screen.visibleFrame)
+        if frame != win.frame {
+            win.setFrame(frame, display: true)
+        }
+    }
+
+    private func clampWindowFrame(_ frame: inout NSRect, to screenVisible: NSRect) {
+        guard screenVisible.width > 0, screenVisible.height > 0 else { return }
+        if frame.maxY > screenVisible.maxY - 8 {
+            frame.origin.y = screenVisible.maxY - frame.height - 8
+        }
+        if frame.minY < screenVisible.minY + 8 {
+            frame.origin.y = screenVisible.minY + 8
+        }
+        if frame.maxX > screenVisible.maxX - 8 {
+            frame.origin.x = screenVisible.maxX - frame.width - 8
+        }
+        if frame.minX < screenVisible.minX + 8 {
+            frame.origin.x = screenVisible.minX + 8
+        }
+    }
+
+    private func setHostingSizingOptions(_ win: NSWindow, sizing: NSHostingSizingOptions) {
+        guard #available(macOS 13.0, *), let controller = win.contentViewController else { return }
+        func apply<V: View>(_ hosting: NSHostingController<V>) {
+            hosting.sizingOptions = sizing
+        }
+        switch controller {
+        case let hosting as NSHostingController<ContentView>: apply(hosting)
+        case let hosting as NSHostingController<PermissionsView>: apply(hosting)
+        case let hosting as NSHostingController<SetupView>: apply(hosting)
+        default: break
+        }
     }
 
     private func applyPermissionsWindowFrame(_ win: NSWindow) {
@@ -213,7 +291,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let mode = note.object as? DisplayMode, let win = window else { return }
         switch mode {
         case .minimal:
-            savedFullFrame = win.frame
+            let contentSize = win.contentRect(forFrameRect: win.frame).size
+            if WindowLayout.isReasonableFullContentSize(contentSize) {
+                savedFullContentSize = contentSize
+            }
+            setHostingSizingOptions(win, sizing: .intrinsicContentSize)
             win.styleMask = [.titled, .resizable, .fullSizeContentView]
             win.standardWindowButton(.closeButton)?.isHidden = true
             win.standardWindowButton(.miniaturizeButton)?.isHidden = true
@@ -224,25 +306,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             win.isMovableByWindowBackground = true
             win.backgroundColor = .clear
             win.isOpaque = false
-            win.minSize = NSSize(width: 320, height: 72)
-            win.maxSize = NSSize(width: 900, height: 280)
-            win.setContentSize(NSSize(width: 560, height: 96))
+            let fontScale = UserDefaults.standard.double(forKey: "Scripta.fontScale")
+            win.minSize = WindowLayout.minimalMinSize(fontScale: fontScale)
+            win.maxSize = WindowLayout.minimalMaxSize(fontScale: fontScale)
             DispatchQueue.main.async { [weak self] in
                 self?.applyMinimalWindowFrame(win, animated: true)
-                DispatchQueue.main.async {
-                    self?.applyMinimalWindowFrame(win, animated: false)
-                }
             }
         case .full:
             let fontScale = UserDefaults.standard.double(forKey: "Scripta.fontScale")
-            if let saved = savedFullFrame {
-                resetWindowForFullMode(win)
-                win.minSize = WindowLayout.fullMinSize(showChatPanel: false, fontScale: fontScale)
-                win.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-                win.setFrame(saved, display: true, animate: true)
-            } else {
-                applyFullWindowFrame(win, showChatPanel: false, fontScale: fontScale, animated: true)
-            }
+            applyFullWindowFrame(
+                win,
+                showChatPanel: false,
+                fontScale: fontScale,
+                animated: true,
+                force: true,
+                preferredContentSize: savedFullContentSize,
+                recenter: false
+            )
         }
     }
 
@@ -287,6 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPermissionsWindow() {
         let permView = PermissionsView { [weak self] in
+            UserDefaults.standard.set(true, forKey: "Scripta.permissionsOnboardingComplete")
             self?.showMainWindow()
         }
         let hosting = NSHostingController(rootView: permView)
@@ -342,7 +423,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             win.title = "Scripta"
             win.delegate = self
             applyFullWindowFrame(
-                win, showChatPanel: false, fontScale: fontScale, animated: false, force: true
+                win,
+                showChatPanel: false,
+                fontScale: fontScale,
+                animated: false,
+                force: true,
+                recenter: true
             )
             win.makeKeyAndOrderFront(nil)
         } else {
@@ -350,7 +436,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             win.title = "Scripta"
             win.delegate = self
             applyFullWindowFrame(
-                win, showChatPanel: false, fontScale: fontScale, animated: false, force: true
+                win,
+                showChatPanel: false,
+                fontScale: fontScale,
+                animated: false,
+                force: true,
+                recenter: true
             )
             win.makeKeyAndOrderFront(nil)
             window = win

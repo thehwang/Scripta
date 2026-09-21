@@ -305,7 +305,7 @@ struct PermissionsView: View {
                 await MainActor.run { screenStatus = .granted }
                 return
             }
-            await MainActor.run { CGRequestScreenCaptureAccess() }
+            _ = await MainActor.run { CGRequestScreenCaptureAccess() }
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             let granted = await checkScreenRecordingViaContent()
             await MainActor.run {

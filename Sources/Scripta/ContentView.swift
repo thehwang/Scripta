@@ -52,6 +52,7 @@ struct ContentView: View {
     @State private var showHistoryPanel = false
     @AppStorage("Scripta.displayMode") private var displayMode: String = DisplayMode.full.rawValue
     @AppStorage("Scripta.fontScale") private var fontScale: Double = 1.0
+    @AppStorage("Scripta.suggestionsEnabled") private var suggestionsEnabled = true
     @AppStorage("Scripta.recordingDisclaimerAccepted") private var disclaimerAccepted = false
     @State private var showRecordingDisclaimer = false
     @State private var chatPendingQuestion: String?
@@ -132,7 +133,10 @@ struct ContentView: View {
                 handleFontScaleChange()
             }
             .onChange(of: showChatPanel) { _, _ in
-                requestFullWindowLayout(animated: true)
+                requestFullWindowLayout(animated: true, widthOnly: true)
+            }
+            .onChange(of: suggestionsEnabled) { _, enabled in
+                if !enabled { suggestionCoordinator.reset() }
             }
             .onChange(of: showSummary) { _, _ in
                 if !isMinimal {
@@ -191,6 +195,9 @@ struct ContentView: View {
     }
 
     private func handleRecorderStateChange() {
+        if recorder.state == .recording {
+            resetSummaryUI()
+        }
         if recorder.state == .completed && summaryModelManager.isReady {
             showSummary = true
         }
@@ -225,9 +232,13 @@ struct ContentView: View {
         }
     }
 
+    private var suggestionsActive: Bool {
+        suggestionsEnabled && suggestionCoordinator.isPlatformAvailable
+    }
+
     @ViewBuilder
     private var suggestionStripIfNeeded: some View {
-        if let suggestion = suggestionCoordinator.currentSuggestion {
+        if suggestionsActive, let suggestion = suggestionCoordinator.currentSuggestion {
             SuggestionStrip(
                 suggestion: suggestion,
                 onDeepAsk: { openAskAI(with: suggestion.question) },
@@ -248,7 +259,7 @@ struct ContentView: View {
             switchToMode(.full)
         }
         showChatPanel = true
-        requestFullWindowLayout(animated: true)
+        requestFullWindowLayout(animated: true, widthOnly: true)
         suggestionCoordinator.dismissCurrent()
 
         // ChatPanel is created after showChatPanel flips; defer so onChange/onAppear can consume it.
@@ -260,7 +271,7 @@ struct ContentView: View {
         }
     }
 
-    private func requestFullWindowLayout(animated: Bool = false) {
+    private func requestFullWindowLayout(animated: Bool = false, widthOnly: Bool = false) {
         NotificationCenter.default.post(
             name: .fullWindowLayoutNeeded,
             object: nil,
@@ -268,61 +279,48 @@ struct ContentView: View {
                 WindowLayoutUserInfoKey.showChatPanel: showChatPanel,
                 WindowLayoutUserInfoKey.fontScale: fontScale,
                 WindowLayoutUserInfoKey.animated: animated,
+                WindowLayoutUserInfoKey.widthOnly: widthOnly,
             ]
         )
-    }
-
-    private var fullWindowMinWidth: CGFloat {
-        (showChatPanel ? WindowLayout.fullChatWidth : WindowLayout.fullBaseWidth)
-            * WindowLayout.normalizedFontScale(fontScale)
-    }
-
-    private var fullWindowMinHeight: CGFloat {
-        WindowLayout.fullBaseHeight * WindowLayout.normalizedFontScale(fontScale)
     }
 
     // MARK: - Full Mode Body
 
     private var fullBody: some View {
         HSplitView {
-            ZStack {
-                Theme.bg.ignoresSafeArea()
+            VStack(spacing: 0) {
+                topBar
+                Divider().background(Theme.border)
 
                 VStack(spacing: 0) {
-                    topBar
-                    Divider().background(Theme.border)
-
-                    VStack(spacing: 0) {
-                        if !hasMicPermission && recorder.state == .idle {
-                            permissionBanner.padding(.horizontal, 20).padding(.top, 16)
-                        }
-                        if !summaryModelManager.isReady && recorder.state == .idle {
-                            aiModelBanner.padding(.horizontal, 20).padding(.top, 16)
-                        }
-                        if whisperModelState != .ready && recorder.state == .idle {
-                            whisperModelBanner.padding(.horizontal, 20).padding(.top, 16)
-                        }
-                        statusStrip.padding(.horizontal, 20).padding(.top, 16)
-                        transcriptPanel
-                            .padding(.horizontal, 20)
-                            .padding(.top, 12)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-                        if showSummary || summaryService.isGenerating || !summaryService.streamingText.isEmpty {
-                            summaryPanel.padding(.horizontal, 20).padding(.top, 8)
-                        }
-
-                        exportStrip.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 8)
+                    if !hasMicPermission && recorder.state == .idle {
+                        permissionBanner.padding(.horizontal, 20).padding(.top, 16)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    suggestionStripIfNeeded
-                        .padding(.horizontal, 20)
-                    bottomBar
+                    if !summaryModelManager.isReady && recorder.state == .idle {
+                        aiModelBanner.padding(.horizontal, 20).padding(.top, 16)
+                    }
+                    if whisperModelState != .ready && recorder.state == .idle {
+                        whisperModelBanner.padding(.horizontal, 20).padding(.top, 16)
+                    }
+                    statusStrip.padding(.horizontal, 20).padding(.top, 16)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                transcriptPanel
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                if showSummary || summaryService.isGenerating || !summaryService.streamingText.isEmpty {
+                    summaryPanel.padding(.horizontal, 20).padding(.top, 8)
+                }
+
+                exportStrip.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 8)
+                suggestionStripIfNeeded
+                    .padding(.horizontal, 20)
+                bottomBar
             }
             .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.bg)
 
             if showChatPanel {
                 ChatPanel(
@@ -336,12 +334,6 @@ struct ContentView: View {
                 .layoutPriority(1)
             }
         }
-        .frame(
-            minWidth: fullWindowMinWidth,
-            idealWidth: fullWindowMinWidth,
-            minHeight: fullWindowMinHeight,
-            maxHeight: .infinity
-        )
         .sheet(isPresented: $showHistoryPanel) {
             HistoryPanel(
                 store: meetingStore,
@@ -366,7 +358,7 @@ struct ContentView: View {
             minimalControlBar
         }
         .frame(minWidth: WindowLayout.minimalContentWidth(fontScale: fontScale))
-        .fixedSize(horizontal: false, vertical: true)
+        .fixedSize(horizontal: true, vertical: true)
         .background(Color.black.opacity(0.82))
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -429,7 +421,7 @@ struct ContentView: View {
     }
 
     private var minimalControlBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             if recorder.isRecording {
                 HStack(spacing: 5) {
                     Circle()
@@ -440,11 +432,12 @@ struct ContentView: View {
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color.red.opacity(0.9))
                 }
+                .fixedSize()
             }
 
             fontSizeControlsCompact
 
-            Spacer()
+            Spacer(minLength: 8)
 
             if recorder.isRecording {
                 Button {
@@ -484,6 +477,7 @@ struct ContentView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(Color.black.opacity(0.3))
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func refreshPermissionStatus() {
@@ -549,46 +543,32 @@ struct ContentView: View {
                 .padding(.trailing, 8)
             }
 
-            Button {
+            TopBarIconButton(
+                systemName: "clock.arrow.circlepath",
+                help: "Meeting history"
+            ) {
                 showHistoryPanel = true
-            } label: {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.textMuted)
-                    .frame(width: 28, height: 28)
-                    .background(Color.white.opacity(0.04), in: Circle())
             }
-            .buttonStyle(.plain)
-            .help("Meeting history")
             .padding(.trailing, 2)
 
-            Button {
+            TopBarIconButton(
+                systemName: showChatPanel ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right",
+                isActive: showChatPanel,
+                help: showChatPanel ? "Hide chat panel" : "Open chat panel"
+            ) {
                 showChatPanel.toggle()
-            } label: {
-                Image(systemName: showChatPanel ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
-                    .font(.system(size: 12))
-                    .foregroundStyle(showChatPanel ? Theme.accent : Theme.textMuted)
-                    .frame(width: 28, height: 28)
-                    .background(showChatPanel ? Theme.accent.opacity(0.12) : Color.white.opacity(0.04), in: Circle())
             }
-            .buttonStyle(.plain)
-            .help(showChatPanel ? "Hide chat panel" : "Open chat panel")
             .padding(.trailing, 2)
 
             fontSizeControls
                 .padding(.trailing, 4)
 
-            Button {
+            TopBarIconButton(
+                systemName: "rectangle.compress.vertical",
+                help: "Switch to minimal captions view"
+            ) {
                 switchToMode(.minimal)
-            } label: {
-                Image(systemName: "rectangle.compress.vertical")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.textMuted)
-                    .frame(width: 28, height: 28)
-                    .background(Color.white.opacity(0.04), in: Circle())
             }
-            .buttonStyle(.plain)
-            .help("Switch to minimal captions view")
             .padding(.trailing, 4)
 
             aiModelBadge
@@ -1096,8 +1076,8 @@ struct ContentView: View {
             }
             languagePicker
             translationControls
+            suggestionControls
         }
-        .lineLimit(1)
     }
 
     private var bottomBarTrailingControls: some View {
@@ -1290,6 +1270,37 @@ struct ContentView: View {
         whisperLanguageUnsupported = !recorder.whisperEngine.supportsRecognitionLanguage(code)
     }
 
+    private var suggestionControls: some View {
+        let platform = SuggestionCoordinator.availabilityStatus()
+        return VStack(alignment: .leading, spacing: 2) {
+            Toggle(isOn: $suggestionsEnabled) {
+                Label("Suggestions", systemImage: "lightbulb")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(
+                        suggestionsEnabled && platform.enabled ? Theme.accentSoft : Theme.textSecondary
+                    )
+            }
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .disabled(!platform.enabled)
+            .help(
+                platform.enabled
+                    ? "Show AI-suggested questions during meetings"
+                    : platform.reason
+            )
+
+            if !platform.enabled {
+                Text(platform.reason)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.textMuted)
+                    .lineLimit(2)
+                    .frame(maxWidth: 200, alignment: .leading)
+            }
+        }
+        .opacity(platform.enabled ? 1 : 0.7)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
     private var translationControls: some View {
         HStack(spacing: 8) {
             if translationService.isAvailable {
@@ -1312,6 +1323,7 @@ struct ContentView: View {
                 }
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var shouldShowTranslation: Bool {
@@ -1385,7 +1397,7 @@ struct ContentView: View {
             Button { decreaseFontScale() } label: {
                 Text("A")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.textMuted)
+                    .foregroundStyle(Theme.textSecondary)
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
@@ -1394,7 +1406,7 @@ struct ContentView: View {
 
             Text("\(Int(fontScale * 100))%")
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .foregroundStyle(Theme.textMuted)
+                .foregroundStyle(Theme.textSecondary)
                 .frame(width: 34)
                 .onTapGesture { resetFontScale() }
                 .help("Reset to default (⌘0)")
@@ -1402,7 +1414,7 @@ struct ContentView: View {
             Button { increaseFontScale() } label: {
                 Text("A")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.textMuted)
+                    .foregroundStyle(Theme.textSecondary)
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
@@ -1411,7 +1423,8 @@ struct ContentView: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
-        .background(Color.white.opacity(0.04), in: Capsule())
+        .background(Color.white.opacity(0.12), in: Capsule())
+        .overlay(Capsule().stroke(Theme.borderLight, lineWidth: 0.5))
     }
 
     private var fontSizeControlsCompact: some View {
@@ -1441,6 +1454,11 @@ struct ContentView: View {
 
     // MARK: - Summary Generation
 
+    private func resetSummaryUI() {
+        showSummary = false
+        summaryService.reset()
+    }
+
     private func generateSummary() {
         showSummary = true
         Task {
@@ -1465,7 +1483,7 @@ struct ContentView: View {
     // MARK: - Translation
 
     private func updateSuggestionContext() {
-        guard suggestionCoordinator.isEnabled else { return }
+        guard suggestionsActive else { return }
 
         var buffer = RollingContextBuffer(windowSeconds: 180)
         buffer.ingest(entries: recorder.entries)
@@ -1562,6 +1580,37 @@ struct ContentView: View {
     ]
 }
 
+// MARK: - Top Bar Icon Button
+
+private struct TopBarIconButton: View {
+    let systemName: String
+    var isActive: Bool = false
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12))
+                .foregroundStyle(isActive ? Theme.accent : Theme.textSecondary)
+                .frame(width: 28, height: 28)
+                .background(
+                    isActive ? Theme.accent.opacity(0.18) : Color.white.opacity(0.12),
+                    in: Circle()
+                )
+                .overlay(
+                    Circle()
+                        .stroke(
+                            isActive ? Theme.accent.opacity(0.35) : Theme.borderLight,
+                            lineWidth: 0.5
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
 // MARK: - Pulse Animation
 
 private struct PulseAnimation: ViewModifier {
@@ -1577,7 +1626,7 @@ private struct PulseAnimation: ViewModifier {
 
 // MARK: - Translation Task Modifier
 
-#if compiler(>=6.0) && canImport(Translation)
+#if SCRIPTA_HAS_TRANSLATION && canImport(Translation)
 import Translation
 
 @available(macOS 15.0, *)

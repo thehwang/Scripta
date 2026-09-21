@@ -17,18 +17,18 @@ final class SuggestionCoordinator: ObservableObject {
     private let minTurns = 2
     private let recentQuestionLimit = 8
 
-    var isEnabled: Bool {
+    var isPlatformAvailable: Bool {
         Self.availabilityStatus().enabled
     }
 
     static func availabilityStatus() -> (enabled: Bool, reason: String) {
-        #if compiler(>=6.0) && canImport(FoundationModels)
+        #if SCRIPTA_HAS_FM_SUGGESTIONS && canImport(FoundationModels)
         if #available(macOS 26, *) {
             return FoundationModelSuggestionEngine.availabilityStatus()
         }
-        return (false, "requires macOS 26")
+        return (false, "Requires macOS 26 with Apple Intelligence")
         #else
-        return (false, "Foundation Models not compiled — build with Xcode 26+ (Swift 6 SDK)")
+        return (false, "Not compiled — build with Xcode 26+ SDK")
         #endif
     }
 
@@ -56,7 +56,7 @@ final class SuggestionCoordinator: ObservableObject {
     }
 
     func processEntries(_ entries: [TranscriptEntry], isRecording: Bool) {
-        guard isEnabled, isRecording else {
+        guard isPlatformAvailable, isRecording else {
             if !isRecording { reset() }
             return
         }
@@ -100,7 +100,7 @@ final class SuggestionCoordinator: ObservableObject {
         lastEvaluationTime = Date()
         defer { isEvaluating = false }
 
-        #if compiler(>=6.0) && canImport(FoundationModels)
+        #if SCRIPTA_HAS_FM_SUGGESTIONS && canImport(FoundationModels)
         if #available(macOS 26, *) {
             do {
                 guard let suggestion = try await FoundationModelSuggestionEngine.evaluate(context: context) else {

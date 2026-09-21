@@ -1,4 +1,4 @@
-#if compiler(>=6.0) && canImport(FoundationModels)
+#if SCRIPTA_HAS_FM_SUGGESTIONS && canImport(FoundationModels)
 import Foundation
 import FoundationModels
 import ScriptaCore

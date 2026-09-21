@@ -17,14 +17,19 @@ else
 endif
 
 ifneq ($(DEVELOPER_DIR),)
-  SWIFT := DEVELOPER_DIR="$(DEVELOPER_DIR)" swift
+  SWIFT := DEVELOPER_DIR="$(DEVELOPER_DIR)" \
+    SCRIPTA_HAS_TRANSLATION="$(shell DEVELOPER_DIR="$(DEVELOPER_DIR)" scripts/translation-enabled.sh)" \
+    SCRIPTA_HAS_FM_SUGGESTIONS="$(shell DEVELOPER_DIR="$(DEVELOPER_DIR)" scripts/suggestions-enabled.sh)" \
+    swift
   $(info Using $(DEVELOPER_DIR) for Swift build (Foundation Models enabled))
 else
-  SWIFT := swift
+  SWIFT := SCRIPTA_HAS_TRANSLATION="$(shell scripts/translation-enabled.sh)" \
+    SCRIPTA_HAS_FM_SUGGESTIONS="$(shell scripts/suggestions-enabled.sh)" \
+    swift
   $(info Using default Xcode — meeting suggestions require Xcode 26+)
 endif
 
-.PHONY: build run install setup-cert test clean reset-permissions whisper-lib
+.PHONY: build run install install-local setup-cert test clean reset-permissions whisper-lib
 
 whisper-lib: $(WHISPER_LIB)
 
@@ -96,6 +101,9 @@ run: setup-cert
 	fi; \
 	echo "Launching $(DEV_BUNDLE) ..."; \
 	open "$(DEV_BUNDLE)"
+
+install-local:
+	@bash scripts/install-local.sh
 
 install: setup-cert
 	@set -e; \

@@ -1,11 +1,26 @@
 // swift-tools-version: 5.9
+import Foundation
 import PackageDescription
 
 #if compiler(>=6.0)
-let extraSwiftSettings: [SwiftSetting] = [.unsafeFlags(["-swift-version", "5"])]
+let compilerSwiftSettings: [SwiftSetting] = [.unsafeFlags(["-swift-version", "5"])]
 #else
-let extraSwiftSettings: [SwiftSetting] = []
+let compilerSwiftSettings: [SwiftSetting] = []
 #endif
+
+let translationSettings: [SwiftSetting] =
+    ProcessInfo.processInfo.environment["SCRIPTA_HAS_TRANSLATION"] == "1"
+    ? [.define("SCRIPTA_HAS_TRANSLATION")] : []
+
+let fmSuggestionsSettings: [SwiftSetting] =
+    ProcessInfo.processInfo.environment["SCRIPTA_HAS_FM_SUGGESTIONS"] == "1"
+    ? [.define("SCRIPTA_HAS_FM_SUGGESTIONS")] : []
+
+let extraSwiftSettings = compilerSwiftSettings + translationSettings + fmSuggestionsSettings
+
+let translationLinker: [LinkerSetting] =
+    ProcessInfo.processInfo.environment["SCRIPTA_HAS_TRANSLATION"] == "1"
+    ? [.linkedFramework("Translation")] : []
 
 let package = Package(
     name: "Scripta",
@@ -46,7 +61,7 @@ let package = Package(
                 .linkedFramework("Metal"),
                 .linkedFramework("MetalKit"),
                 .linkedLibrary("c++"),
-            ]
+            ] + translationLinker
         ),
     ]
 )

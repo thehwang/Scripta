@@ -6,6 +6,8 @@ final class SummaryService: ObservableObject {
     @Published var isGenerating: Bool = false
     @Published var lastError: String = ""
 
+    private var generationID = UUID()
+
     private let maxTokens = 512
     private static let baseURL = "http://localhost:11434"
 
@@ -14,6 +16,14 @@ final class SummaryService: ObservableObject {
     private static let promptOverheadTokens = 1200
     /// Conservative chars-per-token estimate that holds for mixed English/Chinese content.
     private static let charsPerToken = 3.5
+
+    @MainActor
+    func reset() {
+        generationID = UUID()
+        streamingText = ""
+        isGenerating = false
+        lastError = ""
+    }
 
     func generateSummary(
         from entries: [TranscriptEntry],
@@ -31,10 +41,13 @@ final class SummaryService: ObservableObject {
             return
         }
 
-        await MainActor.run {
+        let runID = await MainActor.run {
+            generationID = UUID()
+            let id = generationID
             streamingText = ""
             isGenerating = true
             lastError = ""
+            return id
         }
 
         let contextTokens = SummaryModelManager.contextWindow(for: modelName)
@@ -47,6 +60,7 @@ final class SummaryService: ObservableObject {
 
         guard let url = URL(string: "\(Self.baseURL)/api/generate") else {
             await MainActor.run {
+                guard generationID == runID else { return }
                 isGenerating = false
                 lastError = "Invalid Ollama URL"
             }
@@ -78,6 +92,7 @@ final class SummaryService: ObservableObject {
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
                 await MainActor.run {
+                    guard generationID == runID else { return }
                     isGenerating = false
                     lastError = "Ollama returned HTTP \(code). Is the model '\(modelName)' installed?"
                 }
@@ -103,6 +118,7 @@ final class SummaryService: ObservableObject {
 
                     let cleaned = cleanOutput(output)
                     await MainActor.run {
+                        guard generationID == runID else { return }
                         streamingText = cleaned
                     }
                 }
@@ -113,6 +129,7 @@ final class SummaryService: ObservableObject {
 
                 if let errorMsg = json["error"] as? String {
                     await MainActor.run {
+                        guard generationID == runID else { return }
                         isGenerating = false
                         lastError = errorMsg
                     }
@@ -122,12 +139,14 @@ final class SummaryService: ObservableObject {
 
             let finalOutput = output
             await MainActor.run {
+                guard generationID == runID else { return }
                 streamingText = cleanOutput(finalOutput)
                 isGenerating = false
             }
             mplog("Summary generation complete (\(finalOutput.count) chars)")
         } catch {
             await MainActor.run {
+                guard generationID == runID else { return }
                 isGenerating = false
                 lastError = "Connection to Ollama failed: \(error.localizedDescription)"
             }
