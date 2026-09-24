@@ -139,7 +139,9 @@ if pgrep -x "$APP" >/dev/null 2>&1; then
     sleep 1
 fi
 
+WAS_INSTALLED=0
 if [ -d "$APP_PATH" ]; then
+    WAS_INSTALLED=1
     info "Removing old installation..."
     rm -rf "$APP_PATH"
 fi
@@ -152,8 +154,13 @@ xattr -cr "$APP_PATH"
 info "Resetting permissions for clean authorization..."
 defaults delete "$BUNDLE_ID" Scripta.permissionsOnboardingComplete 2>/dev/null || true
 tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true
-tccutil reset Microphone "$BUNDLE_ID" 2>/dev/null || true
 tccutil reset SpeechRecognition "$BUNDLE_ID" 2>/dev/null || true
+if [ "$WAS_INSTALLED" = "1" ]; then
+    defaults write "$BUNDLE_ID" Scripta.showPostInstallMicHint -bool true
+    info "Keeping existing Microphone TCC grant (upgrade install)"
+else
+    tccutil reset Microphone "$BUNDLE_ID" 2>/dev/null || true
+fi
 
 touch "$APP_PATH"
 killall Dock 2>/dev/null || true

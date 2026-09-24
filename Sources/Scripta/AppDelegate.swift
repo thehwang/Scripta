@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let meetingStore = MeetingStore()
     private var savedFullContentSize: NSSize?
     private var isShowingSetup = false
+    private var windowObservers: [NSObjectProtocol] = []
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Task { @MainActor in
@@ -84,7 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let minWidth = WindowLayout.minimalContentWidth(fontScale: fontScale)
         let fitting = win.contentView?.fittingSize ?? NSSize(width: minWidth, height: 96)
         let contentWidth = min(WindowLayout.minimalMaxSize(fontScale: fontScale).width, max(minWidth, fitting.width))
-        let contentHeight = min(320, max(72, fitting.height))
+        let minHeight = WindowLayout.minimalMinContentHeight(fontScale: fontScale)
+        let contentHeight = min(320, max(minHeight, fitting.height))
         let contentSize = NSSize(width: contentWidth, height: contentHeight)
 
         var frame = win.frameRect(forContentRect: NSRect(origin: .zero, size: contentSize))
@@ -94,6 +96,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clampWindowFrame(&frame, to: screen.visibleFrame)
 
         win.setFrame(frame, display: true, animate: animated)
+    }
+
+    private func applyMinimalWindowChrome(_ win: NSWindow) {
+        win.styleMask = [.titled, .resizable, .fullSizeContentView]
+        win.title = ""
+        win.standardWindowButton(.closeButton)?.isHidden = true
+        win.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        win.standardWindowButton(.zoomButton)?.isHidden = true
+        win.level = .floating
+        win.titlebarAppearsTransparent = true
+        win.titleVisibility = .hidden
+        if #available(macOS 11.0, *) {
+            win.titlebarSeparatorStyle = .none
+        }
+        win.isMovableByWindowBackground = true
+        win.backgroundColor = .clear
+        win.isOpaque = false
+        let fontScale = UserDefaults.standard.double(forKey: "Scripta.fontScale")
+        win.minSize = WindowLayout.minimalMinSize(fontScale: fontScale)
+        win.maxSize = WindowLayout.minimalMaxSize(fontScale: fontScale)
+    }
+
+    private func configureWindowPersistence(_ win: NSWindow) {
+        win.isReleasedWhenClosed = false
+        win.delegate = self
+        attachWindowObservers(win)
+    }
+
+    private func attachWindowObservers(_ win: NSWindow) {
+        for observer in windowObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        windowObservers.removeAll()
+
+        let screenChange = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeScreenNotification,
+            object: win,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleMinimalWindowLayoutNeeded()
+        }
+        windowObservers.append(screenChange)
     }
 
     private func resetWindowForFullMode(_ win: NSWindow) {
@@ -252,6 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "About Scripta", action: #selector(showAbout), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Settings...", action: #selector(showSetup), keyEquivalent: ",")
+        appMenu.addItem(withTitle: "Permissions Setup...", action: #selector(reopenPermissionsOnboarding), keyEquivalent: "")
         appMenu.addItem(.separator())
 
         let hideItem = NSMenuItem(title: "Hide Scripta", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
@@ -296,19 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 savedFullContentSize = contentSize
             }
             setHostingSizingOptions(win, sizing: .intrinsicContentSize)
-            win.styleMask = [.titled, .resizable, .fullSizeContentView]
-            win.standardWindowButton(.closeButton)?.isHidden = true
-            win.standardWindowButton(.miniaturizeButton)?.isHidden = true
-            win.standardWindowButton(.zoomButton)?.isHidden = true
-            win.level = .floating
-            win.titlebarAppearsTransparent = true
-            win.titleVisibility = .hidden
-            win.isMovableByWindowBackground = true
-            win.backgroundColor = .clear
-            win.isOpaque = false
-            let fontScale = UserDefaults.standard.double(forKey: "Scripta.fontScale")
-            win.minSize = WindowLayout.minimalMinSize(fontScale: fontScale)
-            win.maxSize = WindowLayout.minimalMaxSize(fontScale: fontScale)
+            applyMinimalWindowChrome(win)
             DispatchQueue.main.async { [weak self] in
                 self?.applyMinimalWindowFrame(win, animated: true)
             }
@@ -358,6 +391,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Toggle Minimal/Full View", action: #selector(toggleDisplayMode), keyEquivalent: "m")
         menu.addItem(withTitle: "Meeting History", action: #selector(openHistory), keyEquivalent: "h")
         menu.addItem(withTitle: "AI Model Settings...", action: #selector(showSetup), keyEquivalent: ",")
+        menu.addItem(withTitle: "Permissions Setup...", action: #selector(reopenPermissionsOnboarding), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Scripta", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
@@ -376,6 +410,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         win.contentViewController = hosting
         win.title = "Scripta"
         applyPermissionsWindowFrame(win)
+        configureWindowPersistence(win)
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window = win
@@ -393,7 +428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         win.setContentSize(WindowLayout.setupContentSize)
         win.styleMask = [.titled, .closable, .resizable]
         win.minSize = WindowLayout.setupMinSize
-        win.delegate = self
+        configureWindowPersistence(win)
         win.center()
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -421,20 +456,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let win = window {
             win.contentViewController = hosting
             win.title = "Scripta"
-            win.delegate = self
+            configureWindowPersistence(win)
             applyFullWindowFrame(
                 win,
                 showChatPanel: false,
                 fontScale: fontScale,
                 animated: false,
                 force: true,
-                recenter: true
+                recenter: !win.isVisible
             )
             win.makeKeyAndOrderFront(nil)
         } else {
             let win = NSWindow(contentViewController: hosting)
             win.title = "Scripta"
-            win.delegate = self
+            configureWindowPersistence(win)
             applyFullWindowFrame(
                 win,
                 showChatPanel: false,
@@ -481,6 +516,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showSetupWindow()
     }
 
+    @objc private func reopenPermissionsOnboarding() {
+        isShowingSetup = false
+        UserDefaults.standard.set(false, forKey: "Scripta.permissionsOnboardingComplete")
+        window?.orderOut(nil)
+        showPermissionsWindow()
+    }
+
     @objc private func toggleDisplayMode() {
         let current = UserDefaults.standard.string(forKey: "Scripta.displayMode") ?? DisplayMode.full.rawValue
         let next: DisplayMode = (current == DisplayMode.minimal.rawValue) ? .full : .minimal
@@ -511,6 +553,7 @@ extension AppDelegate: NSWindowDelegate {
             showMainWindow()
             return false
         }
-        return true
+        sender.orderOut(nil)
+        return false
     }
 }

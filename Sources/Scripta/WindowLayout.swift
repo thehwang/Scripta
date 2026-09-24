@@ -57,9 +57,15 @@ enum WindowLayout {
         max(minimalBaseWidth, minimalMinWidth) * normalizedFontScale(fontScale)
     }
 
+    /// Minimum content height so minimal mode always fits drag strip + control bar.
+    static func minimalMinContentHeight(fontScale: Double) -> CGFloat {
+        118 * normalizedFontScale(fontScale)
+    }
+
     static func minimalMinSize(fontScale: Double) -> NSSize {
         let scale = normalizedFontScale(fontScale)
-        return NSSize(width: minimalMinWidth * scale, height: 72)
+        let height = minimalMinContentHeight(fontScale: fontScale)
+        return NSSize(width: minimalMinWidth * scale, height: height)
     }
 
     static func minimalMaxSize(fontScale: Double) -> NSSize {

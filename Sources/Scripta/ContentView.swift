@@ -53,6 +53,7 @@ struct ContentView: View {
     @AppStorage("Scripta.displayMode") private var displayMode: String = DisplayMode.full.rawValue
     @AppStorage("Scripta.fontScale") private var fontScale: Double = 1.0
     @AppStorage("Scripta.suggestionsEnabled") private var suggestionsEnabled = true
+    @AppStorage("Scripta.showPostInstallMicHint") private var showPostInstallMicHint = false
     @AppStorage("Scripta.recordingDisclaimerAccepted") private var disclaimerAccepted = false
     @State private var showRecordingDisclaimer = false
     @State private var chatPendingQuestion: String?
@@ -353,17 +354,42 @@ struct ContentView: View {
 
     private var minimalBody: some View {
         VStack(spacing: 0) {
+            minimalDragStrip
             minimalCaptionArea
             suggestionStripIfNeeded
             minimalControlBar
         }
-        .frame(minWidth: WindowLayout.minimalContentWidth(fontScale: fontScale))
-        .fixedSize(horizontal: true, vertical: true)
+        .frame(
+            minWidth: WindowLayout.minimalContentWidth(fontScale: fontScale),
+            minHeight: WindowLayout.minimalMinContentHeight(fontScale: fontScale)
+        )
+        .fixedSize(horizontal: true, vertical: false)
         .background(Color.black.opacity(0.82))
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 0.5))
         .onAppear { requestMinimalWindowLayout() }
+    }
+
+    private var minimalDragStrip: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.white.opacity(0.2))
+                .frame(width: 4, height: 4)
+            Circle()
+                .fill(Color.white.opacity(0.14))
+                .frame(width: 4, height: 4)
+            Circle()
+                .fill(Color.white.opacity(0.14))
+                .frame(width: 4, height: 4)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .help("Drag to move")
     }
 
     private func requestMinimalWindowLayout() {
@@ -481,7 +507,18 @@ struct ContentView: View {
     }
 
     private func refreshPermissionStatus() {
-        hasMicPermission = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        let authorized = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        hasMicPermission = authorized
+        if authorized {
+            showPostInstallMicHint = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            let again = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+            hasMicPermission = again
+            if again {
+                showPostInstallMicHint = false
+            }
+        }
     }
 
     private func switchToMode(_ mode: DisplayMode) {
@@ -687,21 +724,38 @@ struct ContentView: View {
     // MARK: - Permission Banner
 
     private var permissionBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-                .font(.system(size: 14))
-            Text("Microphone permission required.")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.orange.opacity(0.9))
-            Spacer()
-            Button("Open Settings") {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
-                    NSWorkspace.shared.open(url)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.system(size: 14))
+                Text("Microphone permission required.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.orange.opacity(0.9))
+                Spacer()
+                Button("Recheck") {
+                    refreshPermissionStatus()
                 }
+                .font(.system(size: 11, weight: .semibold))
+                .controlSize(.small)
+                Button("Open Settings") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .controlSize(.small)
             }
-            .font(.system(size: 11, weight: .semibold))
-            .controlSize(.small)
+
+            if showPostInstallMicHint {
+                Text(
+                    "After updating, toggle Microphone off and on for Scripta in System Settings, "
+                        + "or use Scripta → Permissions Setup."
+                )
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
