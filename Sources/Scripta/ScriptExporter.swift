@@ -11,8 +11,11 @@ enum ScriptExporter {
         micAudioURL: URL?,
         systemAudioURL: URL?,
         startedAt: Date?,
+        endedAt: Date? = nil,
         entryCount: Int = 0,
-        language: String = "en-US"
+        language: String = "en-US",
+        title: String? = nil,
+        scheduledRecordingId: UUID? = nil
     ) throws -> URL {
         let fm = FileManager.default
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first
@@ -57,7 +60,9 @@ enum ScriptExporter {
         }
 
         let duration: TimeInterval
-        if let start = startedAt {
+        if let start = startedAt, let end = endedAt {
+            duration = max(0, end.timeIntervalSince(start))
+        } else if let start = startedAt {
             duration = Date().timeIntervalSince(start)
         } else {
             duration = 0
@@ -69,7 +74,9 @@ enum ScriptExporter {
             entryCount: entryCount,
             language: language,
             hasSummary: false,
-            hasAudio: hasAudio
+            hasAudio: hasAudio,
+            title: title,
+            scheduledRecordingId: scheduledRecordingId?.uuidString
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

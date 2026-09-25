@@ -8,6 +8,8 @@ struct SessionMetadata: Codable {
     let language: String
     let hasSummary: Bool
     let hasAudio: Bool
+    var title: String?
+    var scheduledRecordingId: String?
 }
 
 struct MeetingSession: Identifiable {
@@ -19,6 +21,12 @@ struct MeetingSession: Identifiable {
     let language: String
     let hasSummary: Bool
     let hasAudio: Bool
+    let title: String?
+
+    var displayTitle: String {
+        if let title, !title.isEmpty { return title }
+        return displayDate
+    }
 
     var displayDate: String {
         let fmt = DateFormatter()
@@ -78,7 +86,8 @@ final class MeetingStore: ObservableObject {
                         entryCount: meta.entryCount,
                         language: meta.language,
                         hasSummary: meta.hasSummary,
-                        hasAudio: meta.hasAudio
+                        hasAudio: meta.hasAudio,
+                        title: meta.title
                     )
                 }
             }
@@ -97,7 +106,8 @@ final class MeetingStore: ObservableObject {
                 entryCount: entryCount,
                 language: "en-US",
                 hasSummary: summaryExists,
-                hasAudio: audioExists
+                hasAudio: audioExists,
+                title: nil
             )
         }
 
@@ -123,6 +133,7 @@ final class MeetingStore: ObservableObject {
         guard !query.isEmpty else { return sessions }
         let lower = query.lowercased()
         return sessions.filter { session in
+            if session.displayTitle.lowercased().contains(lower) { return true }
             if session.displayDate.lowercased().contains(lower) { return true }
             let transcript = loadTranscript(for: session)
             return transcript.lowercased().contains(lower)

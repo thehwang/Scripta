@@ -31,6 +31,7 @@ enum DisplayMode: String {
 extension Notification.Name {
     static let displayModeChanged = Notification.Name("Scripta.displayModeChanged")
     static let showMeetingHistory = Notification.Name("Scripta.showMeetingHistory")
+    static let showScheduledRecordings = Notification.Name("Scripta.showScheduledRecordings")
     static let minimalWindowLayoutNeeded = Notification.Name("Scripta.minimalWindowLayoutNeeded")
 }
 
@@ -41,6 +42,7 @@ struct ContentView: View {
     @ObservedObject var summaryModelManager: SummaryModelManager
     @ObservedObject var translationService: TranslationService
     @ObservedObject var meetingStore: MeetingStore
+    @ObservedObject var scheduleCoordinator: ScheduleCoordinator
     var onOpenModelSettings: (() -> Void)?
 
     @StateObject private var summaryService = SummaryService()
@@ -50,11 +52,13 @@ struct ContentView: View {
     @State private var showSummary = false
     @State private var showChatPanel = false
     @State private var showHistoryPanel = false
+    @State private var showSchedulePanel = false
     @AppStorage("Scripta.displayMode") private var displayMode: String = DisplayMode.full.rawValue
     @AppStorage("Scripta.fontScale") private var fontScale: Double = 1.0
     @AppStorage("Scripta.suggestionsEnabled") private var suggestionsEnabled = true
     @AppStorage("Scripta.showPostInstallMicHint") private var showPostInstallMicHint = false
     @AppStorage("Scripta.recordingDisclaimerAccepted") private var disclaimerAccepted = false
+    @AppStorage(MeetingRecorder.preventSleepWhileRecordingKey) private var preventSleepWhileRecording = true
     @State private var showRecordingDisclaimer = false
     @State private var chatPendingQuestion: String?
     @State private var rollingContextText = ""
@@ -176,6 +180,9 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .showMeetingHistory)) { _ in
                 showHistoryPanel = true
             }
+            .onReceive(NotificationCenter.default.publisher(for: .showScheduledRecordings)) { _ in
+                showSchedulePanel = true
+            }
             .modifier(TranslationTaskModifier(translationService: translationService))
     }
 
@@ -193,13 +200,34 @@ struct ContentView: View {
             .onChange(of: suggestionCoordinator.currentSuggestion?.question) { _, _ in
                 if isMinimal { requestMinimalWindowLayout() }
             }
+            .onChange(of: preventSleepWhileRecording) { _, _ in
+                recorder.syncSleepAssertionWithPreference()
+            }
+            .alert(
+                "Scheduled recording",
+                isPresented: Binding(
+                    get: { scheduleCoordinator.conflictPrompt != nil },
+                    set: { if !$0 { scheduleCoordinator.conflictPrompt = nil } }
+                )
+            ) {
+                Button("Stop current & start scheduled") {
+                    scheduleCoordinator.acceptConflict()
+                }
+                Button("Not now", role: .cancel) {
+                    scheduleCoordinator.declineConflict()
+                }
+            } message: {
+                if let item = scheduleCoordinator.conflictPrompt {
+                    Text("“\(item.title)” is due now, but you are already recording. Stop the current session and start the scheduled one?")
+                }
+            }
     }
 
     private func handleRecorderStateChange() {
         if recorder.state == .recording {
             resetSummaryUI()
         }
-        if recorder.state == .completed && summaryModelManager.isReady {
+        if recorder.state == .completed && summaryModelManager.isReady && !recorder.suppressAutoSummary {
             showSummary = true
         }
         if recorder.state != .recording {
@@ -343,6 +371,12 @@ struct ContentView: View {
                 onDismiss: { showHistoryPanel = false }
             )
             .frame(minWidth: 600, minHeight: 500)
+        }
+        .sheet(isPresented: $showSchedulePanel) {
+            SchedulePanel(
+                coordinator: scheduleCoordinator,
+                onDismiss: { showSchedulePanel = false }
+            )
         }
     }
 
@@ -579,6 +613,14 @@ struct ContentView: View {
                 .frame(maxWidth: 280)
                 .padding(.trailing, 8)
             }
+
+            TopBarIconButton(
+                systemName: "calendar.badge.clock",
+                help: "Scheduled recordings"
+            ) {
+                showSchedulePanel = true
+            }
+            .padding(.trailing, 2)
 
             TopBarIconButton(
                 systemName: "clock.arrow.circlepath",
@@ -1127,6 +1169,7 @@ struct ContentView: View {
             HStack(spacing: 4) {
                 micMuteButton
                 saveAudioButton
+                keepAwakeButton
             }
             languagePicker
             translationControls
@@ -1442,6 +1485,47 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .opacity(recorder.isRecording ? 0.5 : 1.0)
+    }
+
+    private var keepAwakeButton: some View {
+        let activeForSession = recorder.isRecording || recorder.state == .transcribing
+        return Button {
+            preventSleepWhileRecording.toggle()
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: preventSleepWhileRecording && activeForSession ? "moon.zzz.fill" : "moon.zzz")
+                    .font(.system(size: 13))
+                    .foregroundStyle(
+                        preventSleepWhileRecording && activeForSession ? Theme.accentSoft : Theme.textMuted
+                    )
+                Text("Awake")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.textMuted.opacity(preventSleepWhileRecording ? 1 : 0.5))
+            }
+            .frame(width: 40, height: 34)
+            .background(
+                preventSleepWhileRecording && activeForSession
+                    ? Theme.accent.opacity(0.12)
+                    : Color.white.opacity(0.04),
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(
+                        preventSleepWhileRecording && activeForSession
+                            ? Theme.accent.opacity(0.2)
+                            : Color.white.opacity(0.08),
+                        lineWidth: 0.5
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .opacity(preventSleepWhileRecording && !activeForSession ? 0.85 : 1)
+        .help(
+            activeForSession
+                ? "Preventing idle system and display sleep for this recording session."
+                : "When on (default), idle sleep is prevented only while Recording or finishing transcription—not while the app is idle."
+        )
     }
 
     // MARK: - Font Size Controls

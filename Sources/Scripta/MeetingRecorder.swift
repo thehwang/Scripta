@@ -30,6 +30,35 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
     var isRecording: Bool { state == .recording }
 
+    private(set) var suppressAutoSummary = false
+    private(set) var sessionTitle: String?
+    private(set) var scheduledRecordingId: UUID?
+
+    private var pendingScheduledContext: (title: String, id: UUID)?
+    private var pendingSessionLanguage: String?
+    private var sessionRecognitionLanguage: String?
+    private var scheduledAutoStartActive = false
+    private let sleepAssertion = SleepAssertionService()
+
+    static let preventSleepWhileRecordingKey = "Scripta.preventSleepWhileRecording"
+
+    var preventSleepWhileRecording: Bool {
+        UserDefaults.standard.object(forKey: Self.preventSleepWhileRecordingKey) as? Bool ?? true
+    }
+
+    func syncSleepAssertionWithPreference() {
+        let shouldHold = (state == .recording || state == .transcribing) && preventSleepWhileRecording
+        if shouldHold {
+            sleepAssertion.acquire()
+        } else {
+            sleepAssertion.release()
+        }
+    }
+
+    private var languageForCapture: String {
+        sessionRecognitionLanguage ?? recognitionLanguage
+    }
+
     var liveScript: String {
         entries.map { "[\($0.speaker)] \($0.text)" }.joined(separator: "\n")
     }
@@ -122,15 +151,35 @@ final class MeetingRecorder: NSObject, ObservableObject {
 
     // MARK: Public API
 
+    func configureForScheduledRecording(_ schedule: ScheduledRecording) {
+        pendingScheduledContext = (schedule.title, schedule.id)
+        scheduledAutoStartActive = true
+        if let code = schedule.languageCode, !code.isEmpty {
+            pendingSessionLanguage = code
+        }
+    }
+
     func startRecording() async {
         guard state != .recording, !isStarting else { return }
         isStarting = true
         defer { isStarting = false }
 
+        let scheduledContext = pendingScheduledContext
         clearPreviousResult()
-        let locale = Locale(identifier: recognitionLanguage)
+        if let pending = scheduledContext {
+            sessionTitle = pending.title
+            scheduledRecordingId = pending.id
+            suppressAutoSummary = true
+        }
+        if let pendingLang = pendingSessionLanguage, !pendingLang.isEmpty {
+            sessionRecognitionLanguage = pendingLang
+            pendingSessionLanguage = nil
+        } else {
+            sessionRecognitionLanguage = recognitionLanguage
+        }
+        let locale = Locale(identifier: languageForCapture)
         speechRecognizer = SFSpeechRecognizer(locale: locale)
-        mplog("startRecording: language=\(recognitionLanguage), mic=whisper.cpp, system=SFSpeech")
+        mplog("startRecording: language=\(languageForCapture), mic=whisper.cpp, system=SFSpeech")
 
         if !whisperEngine.isLoaded {
             if !whisperEngine.loadModel() {
@@ -142,7 +191,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
             }
         }
 
-        whisperEngine.language = MeetingLanguage.whisperCode(from: recognitionLanguage)
+        whisperEngine.language = MeetingLanguage.whisperCode(from: languageForCapture)
         whisperEngine.onTranscript = { [weak self] text in
             guard let self, self.state == .recording, !self.micMuted else { return }
             self.appendWhisperTranscript(text)
@@ -157,6 +206,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
             recordingEndedAt = nil
             state = .recording
             statusMessage = "Recording — dual channel (You: whisper.cpp, Remote: SFSpeech)..."
+            syncSleepAssertionWithPreference()
 
             try await beginRecordingPipeline()
 
@@ -166,19 +216,25 @@ final class MeetingRecorder: NSObject, ObservableObject {
         } catch let error as SystemAudioCapture.CaptureError where error == .permissionDenied {
             recordingStartedAt = nil
             state = .idle
+            sleepAssertion.release()
+            sessionRecognitionLanguage = nil
             statusMessage = "Screen Recording permission required. Open System Settings → Privacy & Security → Screen Recording → add Scripta."
             lastError = error.localizedDescription
             mplog("startRecording: screen recording permission denied")
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            if !scheduledAutoStartActive,
+               let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
                 NSWorkspace.shared.open(url)
             }
         } catch {
             mplog("startRecording FAILED: \(error.localizedDescription)")
             recordingStartedAt = nil
             state = .idle
+            sleepAssertion.release()
+            sessionRecognitionLanguage = nil
             lastError = error.localizedDescription
             statusMessage = error.localizedDescription
         }
+        scheduledAutoStartActive = false
     }
 
     func releaseMicrophoneCapture() {
@@ -205,6 +261,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         statusMessage = "Finishing transcription..."
         mplog("stopRecording: transitioning to transcribing")
         recordingEndedAt = Date()
+        syncSleepAssertionWithPreference()
 
         stopPipelineWatchdog()
         releaseAudioEngine()
@@ -246,6 +303,14 @@ final class MeetingRecorder: NSObject, ObservableObject {
         micTempURL = nil; systemTempURL = nil
         whisperEngine.reset()
         stopPipelineWatchdog()
+        sleepAssertion.release()
+        suppressAutoSummary = false
+        sessionTitle = nil
+        scheduledRecordingId = nil
+        pendingScheduledContext = nil
+        pendingSessionLanguage = nil
+        sessionRecognitionLanguage = nil
+        scheduledAutoStartActive = false
         Task { await systemAudioCapture.stop() }
     }
 
@@ -1107,8 +1172,11 @@ final class MeetingRecorder: NSObject, ObservableObject {
                 micAudioURL: micAudioURL,
                 systemAudioURL: systemAudioURL,
                 startedAt: recordingStartedAt,
+                endedAt: recordingEndedAt ?? Date(),
                 entryCount: entries.count,
-                language: recognitionLanguage
+                language: languageForCapture,
+                title: sessionTitle,
+                scheduledRecordingId: scheduledRecordingId
             )
             exportedFilePath = sessionDir.path
             state = .completed
@@ -1165,6 +1233,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
         lastError = message
         statusMessage = "Failed: \(message)"
         mplog("FAILURE: \(message)")
+        sleepAssertion.release()
         stopPipelineWatchdog()
         releaseAudioEngine()
         whisperEngine.reset()

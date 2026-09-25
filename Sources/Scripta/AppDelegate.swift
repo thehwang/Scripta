@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let summaryModelManager = SummaryModelManager()
     private let translationService = TranslationService()
     private let meetingStore = MeetingStore()
+    private lazy var scheduleStore = ScheduleStore()
+    private lazy var scheduleCoordinator = ScheduleCoordinator(recorder: recorder, store: scheduleStore)
     private var savedFullContentSize: NSSize?
     private var isShowingSetup = false
     private var windowObservers: [NSObjectProtocol] = []
@@ -29,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loadAppIcon()
         setupMainMenu()
         setupMenuBar()
+        scheduleCoordinator.start()
         if UserDefaults.standard.bool(forKey: "Scripta.permissionsOnboardingComplete") {
             showMainWindow()
         } else {
@@ -390,6 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Toggle Minimal/Full View", action: #selector(toggleDisplayMode), keyEquivalent: "m")
         menu.addItem(withTitle: "Meeting History", action: #selector(openHistory), keyEquivalent: "h")
+        menu.addItem(withTitle: "Scheduled Recordings…", action: #selector(openSchedules), keyEquivalent: "")
         menu.addItem(withTitle: "AI Model Settings...", action: #selector(showSetup), keyEquivalent: ",")
         menu.addItem(withTitle: "Permissions Setup...", action: #selector(reopenPermissionsOnboarding), keyEquivalent: "")
         menu.addItem(.separator())
@@ -444,6 +448,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             summaryModelManager: summaryModelManager,
             translationService: translationService,
             meetingStore: meetingStore,
+            scheduleCoordinator: scheduleCoordinator,
             onOpenModelSettings: { [weak self] in
                 self?.showSetupWindow()
             }
@@ -533,6 +538,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openHistory() {
         showMainWindow()
         NotificationCenter.default.post(name: .showMeetingHistory, object: nil)
+    }
+
+    @objc private func openSchedules() {
+        showMainWindow()
+        NotificationCenter.default.post(name: .showScheduledRecordings, object: nil)
     }
 
     @objc private func toggleRecording() {

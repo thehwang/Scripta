@@ -66,7 +66,7 @@ struct HistoryPanel: View {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.accent)
-            Text(selectedSession == nil ? "Meeting History" : selectedSession!.displayDate)
+            Text(selectedSession == nil ? "Meeting History" : selectedSession!.displayTitle)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
 
@@ -143,9 +143,14 @@ struct HistoryPanel: View {
         } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(session.displayDate)
+                    Text(session.displayTitle)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
+                    if session.title != nil {
+                        Text(session.displayDate)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
 
                     HStack(spacing: 10) {
                         if session.duration > 0 {
