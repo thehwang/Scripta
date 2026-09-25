@@ -24,34 +24,43 @@
   <img src="https://img.shields.io/badge/AI-Ollama-green" alt="Ollama">
   <img src="https://img.shields.io/badge/whisper.cpp-local%20ASR-blueviolet" alt="whisper.cpp">
   <img src="https://img.shields.io/github/license/thehwang/Scripta" alt="MIT License">
+  <a href="https://github.com/thehwang/Scripta/releases/latest"><img src="https://img.shields.io/github/v/release/thehwang/Scripta?label=release" alt="Latest release"></a>
+</p>
+
+### What's new in v3.4.7 — Scheduled recordings
+
+Plan named meetings, set **start** and **end** (or start + duration), and Scripta **auto-starts and auto-stops** capture while the app is running — still **100% on your Mac**. Sessions are saved with **titles** in history (not just timestamps). Overlapping schedules are blocked; scheduled runs **do not** pop the summary sheet automatically (summarize manually when you want).
+
+<p align="center">
+  <img src="screenshots/schedule/Screenshot-schedule-status.png" width="720" alt="Scheduled recordings — upcoming meeting with Pending status, Edit and Cancel actions">
 </p>
 
 <p align="center">
-  <img src="screenshots/full_mode.png" width="720" alt="Scripta — Full mode with live transcription and bilingual translation">
+  <img src="screenshots/schedule/Screenshot-add-schedule.png" width="350" alt="Open Scheduled Recordings from the toolbar calendar icon">
+  &nbsp;
+  <img src="screenshots/schedule/Screenshot-edit-schedule.png" width="350" alt="New schedule — name, start/end or duration, language, notification option">
+</p>
+<p align="center">
+  <sub>Open the scheduler → add a meeting → Scripta records automatically at start time (app running, permissions granted).</sub>
+</p>
+
+<p align="center">
+  <strong><a href="https://github.com/thehwang/Scripta/releases/tag/v3.4.7">Release notes v3.4.7</a></strong> ·
+  <a href="#scheduled-recordings">Feature details</a> ·
+  <a href="#installation">Install</a>
+</p>
+
+<p align="center">
+  <img src="screenshots/full_mode.png" width="720" alt="Scripta — Full mode with live dual-channel transcription">
 </p>
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=owW2F3VU_n0">
     <img src="https://img.youtube.com/vi/owW2F3VU_n0/maxresdefault.jpg"
-         width="720" alt="Watch the Scripta v3.2 + Gemma 4 demo on YouTube">
+         width="720" alt="Watch the Scripta demo on YouTube">
   </a>
   <br>
-  <em>▶ <a href="https://www.youtube.com/watch?v=owW2F3VU_n0">90-second walkthrough: dual-channel capture → Gemma 4 summary with full 128K context</a></em>
-</p>
-
-<p align="center">
-  <strong>Read the v3.2 writeup →</strong>
-  <a href="https://dev.to/thehwang/i-asked-gemma-4-to-summarize-it-said-the-transcript-looked-truncated-it-was-right-4pff"><em>"I asked Gemma 4 to summarize. It said the transcript looked truncated. It was right."</em></a>
-  <br>
-  <sub>Reproducible benchmarks, a 2,048-token Ollama default that silently broke every summary, and a calibration finding on Gemma 4 vision at E2B size. Submitted to the <a href="https://dev.to/challenges/google-gemma-2026-05-06">Dev.to Build with Gemma 4 challenge</a>.</sub>
-</p>
-
-<p align="center">
-  <sub>
-    <strong>Follow-up ablation:</strong> <a href="https://dev.to/thehwang/gemma-4-wrote-three-summaries-in-one-response-the-middle-one-was-a-self-disclaimer-3pj9"><em>"Gemma 4 wrote three summaries in one response. The middle one was a self-disclaimer."</em></a> — 15-run ablation falsifying the original "trained calibration" framing in favour of a configuration-deterministic multi-pass pattern at <code>num_ctx=2048</code>. Harness: <a href="benchmarks/calibration-ablation/"><code>benchmarks/calibration-ablation/</code></a>.
-    <br>
-    <strong>Companion replication:</strong> <a href="https://dev.to/wildeconforce">@wildeconforce</a> independently reproduced the <code>num_ctx=2048</code> truncation default on RTX 4060 8GB / Windows / CUDA, matching wall-time ratios within 10% of the Mac 16GB MPS numbers in <code>benchmarks/</code>, and surfaced a fixture-shape-dependent inversion of the <code>num_ctx</code> quality curve. Production-deployment writeup: <a href="https://dev.to/wildeconforce/production-deployment-of-gemma-4-on-an-8gb-gpu-what-thehwang-and-i-reproduced-across-two-hosts-2783"><em>"Production Deployment of Gemma 4 on an 8GB GPU"</em></a>.
-  </sub>
+  <em>▶ <a href="https://www.youtube.com/watch?v=owW2F3VU_n0">90-second walkthrough: dual-channel capture → local AI summary</a></em>
 </p>
 
 ---
@@ -63,6 +72,17 @@ Scripta is a native macOS app that captures **both your microphone and system au
 - **AI summaries & chat** via [Ollama](https://ollama.com) (local LLM)
 
 ## Features
+
+<a id="scheduled-recordings"></a>
+
+**Scheduled recordings** *(v3.4.7+)*
+- Toolbar **calendar** icon or menu **Scheduled Recordings…** — list upcoming meetings, **Edit** / **Cancel**, status labels (e.g. Pending, Recording now)
+- **New schedule** sheet: meeting **name**, **start** & **end** or **duration**, language, optional **notify if app is not open** at start time
+- **Auto-start** and **auto-stop** while Scripta is open and Screen Recording / mic / speech permissions are already granted
+- **No overlapping** schedules; conflict dialog if a manual recording is already running at start time
+- **Named sessions** in history (`session.json` title) — search by meeting name, not only timestamp
+- **Awake** toggle (bottom bar): optional idle **system + display** sleep prevention during recording/transcription
+- Scheduled completions **skip** the auto-summary panel — summarize from history when you want
 
 **Dual-Channel Real-time Transcription**
 - Mic ("You") via whisper.cpp — 100% local, Metal-accelerated on Apple Silicon
@@ -100,6 +120,34 @@ Scripta is a native macOS app that captures **both your microphone and system au
 - No account, no telemetry, no tracking
 
 ## Screenshots
+
+### Scheduled recordings
+
+<p align="center">
+  <img src="screenshots/schedule/Screenshot-add-schedule.png" width="720" alt="Scheduled Recordings panel — empty state with Add schedule">
+</p>
+
+<p align="center">
+  <em>Empty scheduler — click <strong>Add schedule</strong> or the <strong>+</strong> button.</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/schedule/Screenshot-edit-schedule.png" width="720" alt="New schedule form — Test meeting, start/end times, English, notify if app closed">
+</p>
+
+<p align="center">
+  <em>Set name, window, language, and whether to notify you if Scripta is not open at start time.</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/schedule/Screenshot-schedule-status.png" width="720" alt="Upcoming schedule Test with Pending status">
+</p>
+
+<p align="center">
+  <em>Upcoming list with status — at start time Scripta auto-records; use <strong>Retry start</strong> if permissions were fixed after the slot began.</em>
+</p>
+
+Grant **Screen Recording**, **Microphone**, and **Speech Recognition** in **Permissions Setup** before the meeting window so auto-start does not interrupt you with system dialogs.
 
 ### Full Mode — Live Recording with Translation
 
@@ -139,7 +187,13 @@ A compact floating caption bar that stays on top of your other windows — perfe
   <img src="screenshots/history.png" width="720" alt="Meeting history — browse past sessions with search">
 </p>
 
-Browse all past sessions with duration, entry count, and audio availability. Search transcripts and re-generate summaries at any time.
+Browse all past sessions with duration, entry count, and audio availability. Search transcripts and re-generate summaries at any time. Scheduled meetings appear by **title** when set.
+
+## Articles & benchmarks
+
+- **v3.2 + Gemma 4 writeup:** [*"I asked Gemma 4 to summarize. It said the transcript looked truncated. It was right."*](https://dev.to/thehwang/i-asked-gemma-4-to-summarize-it-said-the-transcript-looked-truncated-it-was-right-4pff) — [Dev.to Gemma 4 challenge](https://dev.to/challenges/google-gemma-2026-05-06)
+- **Follow-up ablation:** [*"Gemma 4 wrote three summaries in one response…"*](https://dev.to/thehwang/gemma-4-wrote-three-summaries-in-one-response-the-middle-one-was-a-self-disclaimer-3pj9) — harness in [`benchmarks/calibration-ablation/`](benchmarks/calibration-ablation/)
+- **Companion replication:** [@wildeconforce](https://dev.to/wildeconforce) — [*Production Deployment of Gemma 4 on an 8GB GPU*](https://dev.to/wildeconforce/production-deployment-of-gemma-4-on-an-8gb-gpu-what-thehwang-and-i-reproduced-across-two-hosts-2783)
 
 ## Installation
 
@@ -209,6 +263,8 @@ Scripta/
 │   │   ├── SummaryService.swift      # Ollama AI summary
 │   │   ├── ChatPanel.swift           # AI Q&A sidebar
 │   │   ├── HistoryPanel.swift        # Meeting history browser
+│   │   ├── SchedulePanel.swift       # Scheduled recordings UI
+│   │   ├── ScheduleCoordinator.swift # Auto-start/stop scheduler
 │   │   ├── TranslationService.swift  # Apple Translation wrapper
 │   │   ├── MeetingStore.swift        # Session persistence
 │   │   └── ...
