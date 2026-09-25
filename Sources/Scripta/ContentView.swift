@@ -118,6 +118,44 @@ struct ContentView: View {
     }
 
     private var rootWithLifecycle: some View {
+        rootWithLifecycleTranslation
+            .onReceive(NotificationCenter.default.publisher(for: .showMeetingHistory)) { _ in
+                showHistoryPanel = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showScheduledRecordings)) { _ in
+                showSchedulePanel = true
+            }
+            .modifier(TranslationTaskModifier(translationService: translationService))
+    }
+
+    private var rootWithLifecycleTranslation: some View {
+        rootWithLifecycleCore
+            .onChange(of: translationService.isSessionReady) { _, ready in
+                if ready { translateCommittedEntries() }
+            }
+            .onChange(of: translationService.isEnabled) { _, enabled in
+                if enabled {
+                    translateCommittedEntries()
+                } else {
+                    translationService.clearSession()
+                }
+            }
+            .onChange(of: recorder.recognitionLanguage) { _, code in
+                translationService.syncSourceLanguage(withMeetingLanguage: code)
+                checkLanguageAvailability()
+                checkWhisperLanguageSupport()
+            }
+            .onChange(of: translationService.targetLanguageCode) { _, _ in
+                invalidateTranslationCache()
+                translateCommittedEntries()
+            }
+            .onChange(of: translationService.sourceLanguageCode) { _, _ in
+                invalidateTranslationCache()
+                translateCommittedEntries()
+            }
+    }
+
+    private var rootWithLifecycleCore: some View {
         modeRoot
             .preferredColorScheme(.dark)
             .onChange(of: recorder.entries.count) { _, _ in
@@ -154,73 +192,24 @@ struct ContentView: View {
                 refreshPermissionStatus()
             }
             .onReceive(timer) { now = $0; updateSuggestionContext() }
-            .onChange(of: translationService.isSessionReady) { _, ready in
-                if ready { translateCommittedEntries() }
-            }
-            .onChange(of: translationService.isEnabled) { _, enabled in
-                if enabled {
-                    translateCommittedEntries()
-                } else {
-                    translationService.clearSession()
-                }
-            }
-            .onChange(of: recorder.recognitionLanguage) { _, code in
-                translationService.syncSourceLanguage(withMeetingLanguage: code)
-                checkLanguageAvailability()
-                checkWhisperLanguageSupport()
-            }
-            .onChange(of: translationService.targetLanguageCode) { _, _ in
-                invalidateTranslationCache()
-                translateCommittedEntries()
-            }
-            .onChange(of: translationService.sourceLanguageCode) { _, _ in
-                invalidateTranslationCache()
-                translateCommittedEntries()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .showMeetingHistory)) { _ in
-                showHistoryPanel = true
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .showScheduledRecordings)) { _ in
-                showSchedulePanel = true
-            }
-            .modifier(TranslationTaskModifier(translationService: translationService))
     }
 
     private var rootWithAlerts: some View {
         rootWithLifecycle
-            .alert("Recording Notice", isPresented: $showRecordingDisclaimer) {
-                Button("I Understand & Agree") {
+            .modifier(RecordingDisclaimerAlertModifier(
+                isPresented: $showRecordingDisclaimer,
+                onAccept: {
                     disclaimerAccepted = true
                     Task { @MainActor in await recorder.startRecording() }
                 }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("Recording conversations may be subject to local consent laws. In many jurisdictions, all participants must be informed and consent before being recorded.\n\nYou are solely responsible for complying with applicable laws. By proceeding, you acknowledge this responsibility.")
-            }
+            ))
             .onChange(of: suggestionCoordinator.currentSuggestion?.question) { _, _ in
                 if isMinimal { requestMinimalWindowLayout() }
             }
             .onChange(of: preventSleepWhileRecording) { _, _ in
                 recorder.syncSleepAssertionWithPreference()
             }
-            .alert(
-                "Scheduled recording",
-                isPresented: Binding(
-                    get: { scheduleCoordinator.conflictPrompt != nil },
-                    set: { if !$0 { scheduleCoordinator.conflictPrompt = nil } }
-                )
-            ) {
-                Button("Stop current & start scheduled") {
-                    scheduleCoordinator.acceptConflict()
-                }
-                Button("Not now", role: .cancel) {
-                    scheduleCoordinator.declineConflict()
-                }
-            } message: {
-                if let item = scheduleCoordinator.conflictPrompt {
-                    Text("“\(item.title)” is due now, but you are already recording. Stop the current session and start the scheduled one?")
-                }
-            }
+            .modifier(ScheduledRecordingConflictAlertModifier(coordinator: scheduleCoordinator))
     }
 
     private func handleRecorderStateChange() {
@@ -1759,6 +1748,46 @@ private struct PulseAnimation: ViewModifier {
             .opacity(pulse ? 0.4 : 1.0)
             .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: pulse)
             .onAppear { pulse = true }
+    }
+}
+
+private struct RecordingDisclaimerAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    var onAccept: () -> Void
+
+    func body(content: Content) -> some View {
+        content.alert("Recording Notice", isPresented: $isPresented) {
+            Button("I Understand & Agree", action: onAccept)
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Recording conversations may be subject to local consent laws. In many jurisdictions, all participants must be informed and consent before being recorded.\n\nYou are solely responsible for complying with applicable laws. By proceeding, you acknowledge this responsibility.")
+        }
+    }
+}
+
+private struct ScheduledRecordingConflictAlertModifier: ViewModifier {
+    @ObservedObject var coordinator: ScheduleCoordinator
+
+    private var isPresented: Binding<Bool> {
+        Binding(
+            get: { coordinator.conflictPrompt != nil },
+            set: { if !$0 { coordinator.conflictPrompt = nil } }
+        )
+    }
+
+    func body(content: Content) -> some View {
+        content.alert("Scheduled recording", isPresented: isPresented) {
+            Button("Stop current & start scheduled") {
+                coordinator.acceptConflict()
+            }
+            Button("Not now", role: .cancel) {
+                coordinator.declineConflict()
+            }
+        } message: {
+            if let item = coordinator.conflictPrompt {
+                Text("“\(item.title)” is due now, but you are already recording. Stop the current session and start the scheduled one?")
+            }
+        }
     }
 }
 
