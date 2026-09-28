@@ -1180,8 +1180,14 @@ final class MeetingRecorder: NSObject, ObservableObject {
             )
             exportedFilePath = sessionDir.path
             state = .completed
-            let hasAudio = micAudioURL != nil || systemAudioURL != nil
-            statusMessage = "Completed. Exported to session folder\(hasAudio ? " (with audio)" : "")."
+            let folderName = sessionDir.lastPathComponent
+            if scheduledRecordingId != nil {
+                let name = sessionTitle ?? "Meeting"
+                statusMessage = "Scheduled \"\(name)\" ended — saved to \(folderName)."
+            } else {
+                let hasAudio = micAudioURL != nil || systemAudioURL != nil
+                statusMessage = "Completed. Exported to session folder\(hasAudio ? " (with audio)" : "")."
+            }
             mplog("doExport: exported to \(sessionDir.path)")
         } catch {
             setFailure("Failed to export: \(error.localizedDescription)")

@@ -168,6 +168,17 @@ final class ScheduleCoordinator: ObservableObject {
         guard item.autoStart, now >= item.startAt, now < item.endAt else { return }
 
         if recorder.isRecording {
+            let isThisScheduledCapture = activeRecordingScheduleId == item.id
+                || recorder.scheduledRecordingId == item.id
+            if isThisScheduledCapture {
+                if conflictPrompt?.id == item.id {
+                    conflictPrompt = nil
+                }
+                if store.item(id: item.id)?.status != .recording {
+                    store.updateStatus(id: item.id, status: .recording)
+                }
+                return
+            }
             if conflictDismissedForId != item.id, conflictPrompt?.id != item.id {
                 conflictPrompt = item
             }
