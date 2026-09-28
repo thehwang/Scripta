@@ -188,6 +188,12 @@ struct ContentView: View {
             }
             .task { await summaryModelManager.checkConnection() }
             .onAppear { handleAppear() }
+            .onReceive(NotificationCenter.default.publisher(for: .displayModeChanged)) { note in
+                guard let mode = note.object as? DisplayMode else { return }
+                if displayMode != mode.rawValue {
+                    displayMode = mode.rawValue
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 refreshPermissionStatus()
             }

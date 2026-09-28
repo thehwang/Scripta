@@ -21,7 +21,7 @@ final class MeetingRecorder: NSObject, ObservableObject {
     @Published private(set) var exportedFilePath: String = ""
     @Published private(set) var lastError: String = ""
     @Published var saveAudio: Bool = true
-    @Published var micMuted: Bool = false
+    @Published var micMuted: Bool = true
     @Published var echoCancellationMode: EchoCancellationMode = EchoCancellationMode.stored {
         didSet {
             UserDefaults.standard.set(echoCancellationMode.rawValue, forKey: EchoCancellationMode.defaultsKey)

@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var savedFullContentSize: NSSize?
     private var isShowingSetup = false
     private var windowObservers: [NSObjectProtocol] = []
+    private var mainContentHosting: NSHostingController<ContentView>?
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Task { @MainActor in
@@ -24,6 +25,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _exit(0)
         }
         return .terminateLater
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if !hasVisibleWindows {
+            showMainWindow()
+        } else if let win = window {
+            win.makeKeyAndOrderFront(nil)
+            restoreFullInterfaceIfNeeded(win)
+        }
+        return true
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -440,10 +451,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isShowingSetup = true
     }
 
-    private func showMainWindow() {
-        UserDefaults.standard.set(DisplayMode.full.rawValue, forKey: "Scripta.displayMode")
-
-        let rootView = ContentView(
+    private func mainContentView() -> ContentView {
+        ContentView(
             recorder: recorder,
             summaryModelManager: summaryModelManager,
             translationService: translationService,
@@ -453,41 +462,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showSetupWindow()
             }
         )
-        let hosting = NSHostingController(rootView: rootView)
-        configureHostingController(hosting, sizing: .standardBounds)
+    }
 
+    private func ensureMainContentHosting() -> NSHostingController<ContentView> {
+        if let mainContentHosting {
+            return mainContentHosting
+        }
+        let hosting = NSHostingController(rootView: mainContentView())
+        configureHostingController(hosting, sizing: .standardBounds)
+        mainContentHosting = hosting
+        return hosting
+    }
+
+    /// Show the main UI in full mode with correct window chrome and size (menu bar, Dock, permissions callback).
+    private func showMainWindow() {
+        isShowingSetup = false
+        let hosting = ensureMainContentHosting()
         let fontScale = UserDefaults.standard.double(forKey: "Scripta.fontScale")
+        let wasVisible = window?.isVisible == true
 
         if let win = window {
-            win.contentViewController = hosting
-            win.title = "Scripta"
-            configureWindowPersistence(win)
-            applyFullWindowFrame(
-                win,
-                showChatPanel: false,
-                fontScale: fontScale,
-                animated: false,
-                force: true,
-                recenter: !win.isVisible
-            )
-            win.makeKeyAndOrderFront(nil)
+            if win.contentViewController !== hosting {
+                win.contentViewController = hosting
+                win.title = "Scripta"
+                configureWindowPersistence(win)
+            }
         } else {
             let win = NSWindow(contentViewController: hosting)
             win.title = "Scripta"
             configureWindowPersistence(win)
-            applyFullWindowFrame(
-                win,
-                showChatPanel: false,
-                fontScale: fontScale,
-                animated: false,
-                force: true,
-                recenter: true
-            )
-            win.makeKeyAndOrderFront(nil)
             window = win
         }
-        isShowingSetup = false
+
+        guard let win = window else { return }
+
+        UserDefaults.standard.set(DisplayMode.full.rawValue, forKey: "Scripta.displayMode")
+        NotificationCenter.default.post(name: .displayModeChanged, object: DisplayMode.full)
+
+        restoreFullInterfaceIfNeeded(win, fontScale: fontScale, recenter: !wasVisible)
+        win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func restoreFullInterfaceIfNeeded(
+        _ win: NSWindow,
+        fontScale: Double? = nil,
+        recenter: Bool = false
+    ) {
+        let scale = fontScale ?? UserDefaults.standard.double(forKey: "Scripta.fontScale")
+        applyFullWindowFrame(
+            win,
+            showChatPanel: false,
+            fontScale: scale,
+            animated: false,
+            force: true,
+            recenter: recenter
+        )
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.applyFullWindowFrame(
+                win,
+                showChatPanel: false,
+                fontScale: scale,
+                animated: false,
+                force: true,
+                recenter: false
+            )
+        }
     }
 
     @objc private func showAbout() {

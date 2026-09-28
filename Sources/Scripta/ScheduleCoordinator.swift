@@ -79,11 +79,11 @@ final class ScheduleCoordinator: ObservableObject {
         ScheduleNotificationService.shared.cancelStartReminder(for: id)
     }
 
-    /// Stop the recorder for this schedule and mark the schedule cancelled (user ended the appointment).
+    /// Stop capture for this schedule before the planned end (keeps the session; does not re-arm auto-start).
     func stopScheduledRecording(id: UUID) {
         detachActiveSchedule(id: id, stopRecorder: true)
-        if store.item(id: id)?.status == .recording {
-            store.updateStatus(id: id, status: .cancelled)
+        if let item = store.item(id: id), item.status == .recording || item.status == .armed {
+            store.updateStatus(id: id, status: .completed)
         }
         ScheduleNotificationService.shared.cancelStartReminder(for: id)
     }
@@ -130,6 +130,7 @@ final class ScheduleCoordinator: ObservableObject {
     }
 
     private func tick(now: Date) {
+        markScheduledCaptureEndedIfStopping()
         reconcileStaleRecordingStatuses(now: now)
         handleRecorderCompletionIfNeeded()
 
@@ -250,24 +251,38 @@ final class ScheduleCoordinator: ObservableObject {
         )
     }
 
+    /// User stopped (or auto-stopped) capture — persist terminal status before export finishes so we don't re-arm.
+    private func markScheduledCaptureEndedIfStopping() {
+        guard recorder.state == .transcribing else { return }
+        guard let scheduleId = activeRecordingScheduleId ?? recorder.scheduledRecordingId else { return }
+        guard store.item(id: scheduleId)?.status == .recording else { return }
+        store.updateStatus(id: scheduleId, status: .completed)
+    }
+
     /// Schedules marked recording in JSON but the app is not actually capturing (quit during permissions, etc.).
     private func reconcileStaleRecordingStatuses(now: Date) {
         for item in store.items where item.status == .recording {
-            let linkedToRecorder = recorder.isRecording
-                && (activeRecordingScheduleId == item.id || recorder.scheduledRecordingId == item.id)
+            let scheduleId = item.id
+            let linkedToActiveCapture = recorder.isRecording
+                && (activeRecordingScheduleId == scheduleId || recorder.scheduledRecordingId == scheduleId)
+            let finishingScheduledExport = recorder.state == .transcribing
+                && (activeRecordingScheduleId == scheduleId || recorder.scheduledRecordingId == scheduleId)
 
-            if linkedToRecorder {
+            if linkedToActiveCapture || finishingScheduledExport {
                 if activeRecordingScheduleId == nil {
-                    activeRecordingScheduleId = item.id
+                    activeRecordingScheduleId = scheduleId
                 }
                 continue
             }
 
-            activeRecordingScheduleId = nil
+            if activeRecordingScheduleId == scheduleId {
+                activeRecordingScheduleId = nil
+            }
             if now >= item.endAt {
                 store.updateStatus(id: item.id, status: .missed)
             } else {
-                store.updateStatus(id: item.id, status: .armed)
+                // Capture was stopped or the app quit mid-session — do not auto-start again in this window.
+                store.updateStatus(id: item.id, status: .completed)
             }
         }
     }
@@ -286,10 +301,15 @@ final class ScheduleCoordinator: ObservableObject {
     }
 
     private func handleRecorderCompletionIfNeeded() {
-        guard recorder.state == .completed,
-              let scheduleId = activeRecordingScheduleId else { return }
+        guard recorder.state == .completed else { return }
+        let scheduleId = activeRecordingScheduleId ?? recorder.scheduledRecordingId
+        guard let scheduleId else { return }
 
-        guard store.item(id: scheduleId)?.status == .recording else {
+        guard let item = store.item(id: scheduleId) else {
+            activeRecordingScheduleId = nil
+            return
+        }
+        guard item.status == .recording || item.status == .completed else {
             activeRecordingScheduleId = nil
             return
         }
