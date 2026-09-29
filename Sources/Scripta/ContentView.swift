@@ -161,13 +161,16 @@ struct ContentView: View {
             .onChange(of: recorder.entries.count) { _, _ in
                 translateCommittedEntries()
                 updateSuggestionContext()
+                syncMinimalWindowLayoutIfNeeded()
             }
             .onChange(of: committedEntrySignature) { _, _ in
                 updateSuggestionContext()
                 translateCommittedEntries()
+                syncMinimalWindowLayoutIfNeeded()
             }
             .onChange(of: liveTranslationSignature) { _, _ in
                 translateCommittedEntries()
+                syncMinimalWindowLayoutIfNeeded()
             }
             .onChange(of: recorder.state) {
                 handleRecorderStateChange()
@@ -193,9 +196,13 @@ struct ContentView: View {
                 if displayMode != mode.rawValue {
                     displayMode = mode.rawValue
                 }
+                if mode == .minimal {
+                    DispatchQueue.main.async { syncMinimalWindowLayoutIfNeeded() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 refreshPermissionStatus()
+                syncMinimalWindowLayoutIfNeeded()
             }
             .onReceive(timer) { now = $0; updateSuggestionContext() }
     }
@@ -228,7 +235,9 @@ struct ContentView: View {
         if recorder.state != .recording {
             suggestionCoordinator.reset()
         }
-        if !isMinimal {
+        if isMinimal {
+            syncMinimalWindowLayoutIfNeeded()
+        } else {
             requestFullWindowLayout(animated: true)
         }
     }
@@ -390,9 +399,10 @@ struct ContentView: View {
         }
         .frame(
             minWidth: WindowLayout.minimalContentWidth(fontScale: fontScale),
-            minHeight: WindowLayout.minimalMinContentHeight(fontScale: fontScale)
+            maxWidth: WindowLayout.minimalMaxSize(fontScale: fontScale).width,
+            minHeight: WindowLayout.minimalMinContentHeight(fontScale: fontScale),
+            alignment: .top
         )
-        .fixedSize(horizontal: true, vertical: false)
         .background(Color.black.opacity(0.82))
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -531,8 +541,13 @@ struct ContentView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
         .background(Color.black.opacity(0.3))
-        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func syncMinimalWindowLayoutIfNeeded() {
+        guard isMinimal else { return }
+        requestMinimalWindowLayout()
     }
 
     private func refreshPermissionStatus() {

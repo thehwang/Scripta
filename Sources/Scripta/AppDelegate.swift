@@ -110,6 +110,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clampWindowFrame(&frame, to: screen.visibleFrame)
 
         win.setFrame(frame, display: true, animate: animated)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            win.contentView?.layoutSubtreeIfNeeded()
+            let settled = win.contentView?.fittingSize ?? contentSize
+            let settledWidth = min(
+                WindowLayout.minimalMaxSize(fontScale: fontScale).width,
+                max(minWidth, settled.width)
+            )
+            let settledHeight = min(320, max(minHeight, settled.height))
+            let settledSize = NSSize(width: settledWidth, height: settledHeight)
+            if abs(settledSize.width - contentSize.width) > 6
+                || abs(settledSize.height - contentSize.height) > 6 {
+                var settledFrame = win.frameRect(forContentRect: NSRect(origin: .zero, size: settledSize))
+                settledFrame.origin.x = win.frame.midX - settledFrame.width / 2
+                settledFrame.origin.y = win.frame.midY - settledFrame.height / 2
+                self.clampWindowFrame(&settledFrame, to: screen.visibleFrame)
+                win.setFrame(settledFrame, display: true, animate: false)
+            }
+        }
     }
 
     private func applyMinimalWindowChrome(_ win: NSWindow) {
